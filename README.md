@@ -8,7 +8,7 @@ This displays live Codex subscription limits. It does not measure API billing, A
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.4.1-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
+1. Under **Assets**, download **`Codex-Usage-1.4.2-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
 2. Double-click the ZIP, then move **Codex Usage.app** to **Applications**.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
@@ -17,9 +17,9 @@ The download contains both Apple silicon and Intel executables and targets **mac
 
 ### First launch
 
-This release is **ad hoc signed and not notarized by Apple**. macOS may block the first launch because it cannot verify the developer. After attempting to open it, if you trust this release, go to **System Settings → Privacy & Security → Open Anyway**, then confirm **Open**. This creates an exception for this app. See [Apple's first-launch instructions](https://support.apple.com/en-us/102445).
+Release **1.4.2 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
 
-If your Mac is managed and does not offer that option, contact your administrator or build from source under your organization's policy.
+Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for the notarized release. Builds you compile yourself or download from CI remain ad hoc signed by default.
 
 ### Updates and checksums
 
@@ -50,7 +50,7 @@ Quit an existing copy before replacing it. The default build targets your Mac's 
 /bin/sh package-release.sh
 ```
 
-The release script writes to `dist/`; the universal app is built separately from the normal local build. Signing defaults to ad hoc. A maintainer can explicitly supply `CODE_SIGN_IDENTITY` to use an installed signing identity; the scripts do not notarize an app automatically.
+The release script writes to `dist/`; the universal app is built separately from the normal local build. Signing defaults to ad hoc. A maintainer can explicitly supply `CODE_SIGN_IDENTITY` to select a valid Developer ID Application certificate, enable hardened runtime, and obtain a secure timestamp. Public notarized releases require the separate workflow in [RELEASING.md](RELEASING.md); a normal local or CI build is not notarized.
 
 ## Use
 

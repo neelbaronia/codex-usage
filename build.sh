@@ -9,13 +9,32 @@ case "${1-}" in
   -h|--help)
     printf '%s\n' 'Usage: /bin/sh build.sh [--universal]' \
       'Builds a macOS 13+ app for this Mac, or both arm64 and x86_64.' \
-      'CODE_SIGN_IDENTITY optionally selects an existing signing identity; default: ad hoc.'
+      'Default signing is offline/ad hoc. CODE_SIGN_IDENTITY may explicitly select a' \
+      'Developer ID Application certificate (name or SHA-1); this enables hardened runtime' \
+      'and a secure timestamp, which requires network access.'
     exit 0 ;;
   *) printf '%s\n' "Unknown option: $1" >&2; exit 64 ;;
 esac
 if [ "$#" -gt 1 ]; then
   printf '%s\n' 'Expected at most one option. Use --help for usage.' >&2
   exit 64
+fi
+
+SIGNING_IDENTITY=${CODE_SIGN_IDENTITY:--}
+if [ "$SIGNING_IDENTITY" != - ]; then
+  # Resolve only the explicitly requested identity. In particular, an Apple
+  # Development certificate cannot produce a distributable notarized release.
+  SIGNING_HASH=$(/usr/bin/security find-identity -v -p codesigning | /usr/bin/awk -v requested="$SIGNING_IDENTITY" '
+    /"Developer ID Application: / {
+      name = substr($0, index($0, "\"") + 1); sub(/"[[:space:]]*$/, "", name)
+      if (name == requested || (length(requested) == 40 && toupper($2) == toupper(requested))) print $2
+    }
+  ')
+  if [ -z "$SIGNING_HASH" ] || [ "$(printf '%s\n' "$SIGNING_HASH" | /usr/bin/wc -l | /usr/bin/tr -d ' ')" != 1 ]; then
+    printf '%s\n' 'CODE_SIGN_IDENTITY must uniquely match an installed, valid Developer ID Application certificate.' >&2
+    exit 1
+  fi
+  SIGNING_IDENTITY=$SIGNING_HASH
 fi
 
 if [ "$BUILD_MODE" = universal ]; then
@@ -84,10 +103,27 @@ for DOCUMENT in LICENSE THIRD_PARTY_NOTICES.md; do
   fi
 done
 
-# No identity is discovered or selected automatically. Timestamping is disabled
-# so the build stays offline; public notarization is a separate release step.
-/usr/bin/codesign --force --sign "${CODE_SIGN_IDENTITY:--}" --timestamp=none \
-  --identifier "$BUNDLE_ID" "$STAGED_APP"
+# The default remains offline. Developer ID releases use hardened runtime with
+# no exception entitlements: this app does not load third-party code in process.
+if [ "$SIGNING_IDENTITY" = - ]; then
+  /usr/bin/codesign --force --sign - --timestamp=none --identifier "$BUNDLE_ID" "$STAGED_APP"
+else
+  /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+    --identifier "$BUNDLE_ID" "$STAGED_APP"
+  SIGNATURE_DETAILS=$(/usr/bin/codesign -dv --verbose=4 "$STAGED_APP" 2>&1)
+  case "$SIGNATURE_DETAILS" in
+    *"Authority=Developer ID Application: "*) ;;
+    *) printf '%s\n' 'The signed app is missing its Developer ID Application authority.' >&2; exit 1 ;;
+  esac
+  case "$SIGNATURE_DETAILS" in
+    *"(runtime)"*) ;;
+    *) printf '%s\n' 'The signed app is missing hardened runtime.' >&2; exit 1 ;;
+  esac
+  case "$SIGNATURE_DETAILS" in
+    *"Timestamp="*) ;;
+    *) printf '%s\n' 'The signed app is missing a secure timestamp.' >&2; exit 1 ;;
+  esac
+fi
 /usr/bin/codesign --verify --deep --strict "$STAGED_APP"
 /usr/bin/plutil -lint "$STAGED_APP/Contents/Info.plist" >/dev/null
 
