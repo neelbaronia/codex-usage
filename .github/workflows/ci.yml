@@ -19,6 +19,7 @@ jobs:
           /bin/sh -n build.sh
           /bin/sh -n package-release.sh
           /bin/sh -n notarize-release.sh
+          /bin/sh -n package-dmg.sh
       - name: Run offline tests
         run: /bin/sh test.sh
       - name: Build and verify universal release

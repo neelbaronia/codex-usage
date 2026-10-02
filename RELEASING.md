@@ -6,7 +6,8 @@ credentials in the local Keychain; do not commit or bundle them.
 
 ## Prepare
 
-1. Update `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist`.
+1. For a new app version, update `CFBundleShortVersionString` and
+   `CFBundleVersion` in `Info.plist`.
 2. Run `/bin/sh test.sh`.
 3. Confirm the intended **Developer ID Application** identity is available with
    `security find-identity -v -p codesigning`. An Apple Development certificate
@@ -84,18 +85,97 @@ The same extracted-ZIP checks apply. Preserve the archive and submission
 records until the release is verified. An upload success alone does not mean
 Apple has accepted the submission.
 
+## Package and notarize a DMG
+
+The DMG is an additional distribution format; it has not yet been published.
+Start with the exact notarized, stapled app retained by the release workflow or
+extracted from the published ZIP. Do not rebuild, re-sign, or otherwise change
+the app to add a DMG to an existing release.
+
+```sh
+CODE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
+/bin/sh package-dmg.sh --app '/absolute/path/to/Codex Usage.app'
+```
+
+The script creates `dist/Codex-Usage-VERSION-macos-universal.dmg`, containing the
+unchanged app, an Applications shortcut, and installation instructions. It uses
+`Resources/dmg-layout.dsstore` when present for the Finder layout; `--ds-store`
+can select another template. It verifies the mounted app and refuses to overwrite
+an existing DMG. Open the image in Finder and check the layout and drag-to-install
+flow before publishing. The DMG's Developer ID signature is separate from Apple
+notarization: the outer image still needs its own submission and stapled ticket.
+
+The checked-in layout contains only relative filenames and Finder view settings.
+To change it, edit `scripts/generate-dmg-layout.py` and regenerate with an isolated
+Python environment containing `ds-store==1.3.3`. Regular packaging does not need
+Python or this dependency.
+
+Using the Keychain profile created above, submit the image once and retain the
+response, diagnostics, and submitted hash under `build/`:
+
+```sh
+DMG_NAME=Codex-Usage-1.4.2-macos-universal.dmg
+DMG_PATH="$PWD/dist/$DMG_NAME"
+mkdir -p build
+DMG_RECORD_DIR=$(mktemp -d "$PWD/build/notarization-dmg.XXXXXX")
+shasum -a 256 "$DMG_PATH" > "$DMG_RECORD_DIR/submitted-dmg.sha256"
+xcrun notarytool submit "$DMG_PATH" \
+  --keychain-profile codex-usage-notary --output-format json \
+  --wait --timeout 60s \
+  > "$DMG_RECORD_DIR/submit.json" 2> "$DMG_RECORD_DIR/submit.stderr"
+```
+
+A timeout does not cancel Apple's processing. If the response is uncertain or
+missing its submission ID, do not submit again: inspect history, reconcile the
+upload, and retain its ID. Use that same ID to check status and, once processing
+completes, retrieve Apple's log. Review any warnings and confirm the log's
+submitted hash matches the saved hash before proceeding.
+
+```sh
+xcrun notarytool history --keychain-profile codex-usage-notary \
+  --output-format json > "$DMG_RECORD_DIR/history.json"
+DMG_SUBMISSION_ID='UUID from submit.json or the reconciled history entry'
+xcrun notarytool info "$DMG_SUBMISSION_ID" \
+  --keychain-profile codex-usage-notary --output-format json \
+  > "$DMG_RECORD_DIR/info.json"
+xcrun notarytool log "$DMG_SUBMISSION_ID" \
+  --keychain-profile codex-usage-notary "$DMG_RECORD_DIR/log.json"
+```
+
+Only after Apple reports **Accepted** for this image, staple and validate the
+DMG, then calculate its final checksum. Stapling changes the image's bytes.
+
+```sh
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+codesign --verify --strict "$DMG_PATH"
+spctl --assess --type open --context context:primary-signature \
+  --verbose=2 "$DMG_PATH"
+(cd dist && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
+```
+
+Keep the per-image `$DMG_NAME.sha256` separate from `dist/SHA256SUMS.txt`, which
+belongs to the ZIP release. Preserve the submission records locally.
+
 ## Publish and verify
 
 1. Launch the signed app and verify live allowance refresh, local token rates,
    and menu/popover behavior. Confirm the intended launch-at-login setting.
 2. Update the README's download version and signing status only after successful
    notarization. Do not describe an ad hoc or merely submitted build as notarized.
-3. Commit, run CI, and tag the exact source revision. Create a new GitHub release
-   with `dist/Codex-Usage-VERSION-macos-universal.zip` and `dist/SHA256SUMS.txt`.
-   Do not silently replace an older version's ZIP with different bytes.
-4. Download the published assets again, verify their checksum, extract the app,
-   and repeat signature, `stapler validate`, and Gatekeeper checks. Confirm the
-   download is accessible without signing into GitHub.
+3. For a new app version, commit, run CI, and tag the exact source revision.
+   Publish both the ZIP and notarized DMG, along with `dist/SHA256SUMS.txt` for
+   the ZIP and the DMG's own `.dmg.sha256` file. CI only checks the DMG script's
+   shell syntax; it does not require signing or notarization credentials.
+4. For the planned DMG addition to **v1.4.2**, upload only
+   `Codex-Usage-1.4.2-macos-universal.dmg` and its `.dmg.sha256` file as additional
+   assets on that release after completing the checks above. Keep the identical
+   app, existing ZIP bytes, `SHA256SUMS.txt`, and tag. This packaging addition
+   requires no app version bump. Do not replace existing assets.
+5. Download the published assets again and verify their respective checksums.
+   Extract the ZIP and mount the DMG; repeat the app signature, `stapler validate`,
+   and Gatekeeper checks, as well as the DMG checks above. Confirm downloads are
+   accessible without signing into GitHub.
 
 Apple references: [notarization requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution),
 [custom notarization workflows](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow),
