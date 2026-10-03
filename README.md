@@ -8,7 +8,7 @@ This displays live Codex subscription limits. It does not measure API billing, A
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.4.2-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
+1. Under **Assets**, download **`Codex-Usage-1.4.3-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
 2. Double-click the ZIP, then move **Codex Usage.app** to **Applications**.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
@@ -17,7 +17,7 @@ The download contains both Apple silicon and Intel executables and targets **mac
 
 ### First launch
 
-Release **1.4.2 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
+Release **1.4.3 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
 
 Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for the notarized release. Builds you compile yourself or download from CI remain ad hoc signed by default.
 

@@ -120,8 +120,10 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 let arc = NSBezierPath()
                 arc.lineWidth = 1.5
                 arc.lineCapStyle = .round
+                // Draw the remainder backward from noon so the consumed gap
+                // advances clockwise as the allowance decreases.
                 arc.appendArc(withCenter: NSPoint(x: 11, y: 11), radius: 9.5,
-                              startAngle: 90, endAngle: 90 - remaining * 3.6, clockwise: true)
+                              startAngle: 90, endAngle: 90 + remaining * 3.6, clockwise: false)
                 NSColor.black.setStroke()
                 arc.stroke()
             }
