@@ -188,6 +188,8 @@ final class DashboardController: NSViewController {
     private var readoutStack: NSStackView?
     private var detailsExpanded = UserDefaults.standard.bool(forKey: "ModelDetailsExpanded")
     private var settingsExpanded = false
+    private var resetScroll = false
+    private var showAllRepositories = false
 
     override func loadView() {
         let surface = DashboardSurface(frame: NSRect(x: 0, y: 0, width: 350, height: 450))
@@ -235,7 +237,8 @@ final class DashboardController: NSViewController {
     func render() {
         _ = view
         guard let owner else { return }
-        let oldOrigin = scroll.contentView.bounds.origin
+        let oldOrigin = resetScroll ? NSPoint.zero : scroll.contentView.bounds.origin
+        resetScroll = false
         readoutStack = nil
         for child in stack.arrangedSubviews { stack.removeArrangedSubview(child); child.removeFromSuperview() }
         let plan = owner.snapshot?.buckets.compactMap(\.planType).first?.capitalized ?? "Account"
@@ -246,8 +249,48 @@ final class DashboardController: NSViewController {
         mark.heightAnchor.constraint(equalToConstant: 18).isActive = true
         let title = caption("Codex / Usage", size: 11)
         title.textColor = UsagePalette.ink
-        add(horizontal([mark, title, NSView(), caption(plan)]), top: 18, bottom: 16)
+        add(horizontal([mark, title, NSView(), caption(plan)]), top: 18, bottom: 12)
 
+        let tabs = NSSegmentedControl(labels: DashboardTab.allCases.map(\.title), trackingMode: .selectOne,
+                                      target: self, action: #selector(selectTab(_:)))
+        tabs.selectedSegment = owner.selectedTab.rawValue
+        tabs.segmentDistribution = .fillEqually
+        tabs.segmentStyle = .texturedRounded
+        tabs.font = .systemFont(ofSize: 12, weight: .medium)
+        tabs.setAccessibilityLabel("Usage view")
+        add(tabs, bottom: 16, inset: 14)
+        if owner.selectedTab == .allowance { addAllowanceContent(owner) }
+        else { addHistoryContent(owner) }
+        if let error = owner.actionErrorText { add(textLabel(error, size: 11, color: UsagePalette.warning), top: 10, bottom: 10) }
+
+        let footerText: String
+        if owner.selectedTab != .allowance {
+            if owner.isReadingAnalytics { footerText = "Reading local history…" }
+            else if let date = owner.analyticsScannedAt { footerText = "Local · \(formatDate(date, "h:mm a"))" }
+            else { footerText = "Local history" }
+        }
+        else if let count = owner.snapshot?.availableResets, count > 0 { footerText = "\(count) full reset\(count == 1 ? "" : "s") available" }
+        else if owner.isRefreshing { footerText = "Refreshing…" }
+        else if let date = owner.snapshot?.fetchedAt { footerText = "Updated \(formatDate(date, "h:mm a"))" }
+        else { footerText = "Codex account allowance" }
+        let footer = textLabel(footerText, size: 10, color: UsagePalette.secondary)
+        footer.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        footer.toolTip = owner.selectedTab == .allowance ? freshness(owner) : "Local token history · refreshes every 5 minutes after the first scan"
+        let settings = instrumentButton("Settings", target: self, action: #selector(toggleSettings), accent: true)
+        settings.setAccessibilityValue(settingsExpanded ? "Expanded" : "Collapsed")
+        add(horizontal([footer, NSView(), settings]), top: 10, bottom: 14, inset: 14)
+        if settingsExpanded { addSettings(owner) }
+
+        view.layoutSubtreeIfNeeded()
+        let height = ceil(stack.fittingSize.height)
+        document.setFrameSize(NSSize(width: 350, height: height))
+        let availableHeight = max(200, ((view.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 700) - 60)
+        preferredContentSize = NSSize(width: 350, height: min(height, availableHeight))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(oldOrigin.y, max(0, height - preferredContentSize.height))))
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
+
+    private func addAllowanceContent(_ owner: UsageApp) {
         let readout = NSStackView()
         readout.orientation = .vertical
         readout.alignment = .leading
@@ -280,7 +323,6 @@ final class DashboardController: NSViewController {
         }
 
         if let error = owner.errorText { add(textLabel(error, size: 11, color: UsagePalette.warning), bottom: 16) }
-        if let error = owner.actionErrorText { add(textLabel(error, size: 11, color: UsagePalette.warning), bottom: 16) }
         if let snapshot = owner.snapshot, !owner.isRefreshing, Date().timeIntervalSince(snapshot.fetchedAt) > 600 || owner.errorText != nil {
             add(textLabel("Last successful update \(formatDate(snapshot.fetchedAt, "EEE, h:mm a"))", size: 11, color: UsagePalette.secondary), bottom: 12)
         }
@@ -304,26 +346,189 @@ final class DashboardController: NSViewController {
         if detailsExpanded { addDetails(owner, forecast: forecast, rates: rates, scenarios: scenarios, selected: selected) }
         add(separator(), inset: 14)
 
-        let footerText: String
-        if let count = owner.snapshot?.availableResets, count > 0 { footerText = "\(count) full reset\(count == 1 ? "" : "s") available" }
-        else if owner.isRefreshing { footerText = "Refreshing…" }
-        else if let date = owner.snapshot?.fetchedAt { footerText = "Updated \(formatDate(date, "h:mm a"))" }
-        else { footerText = "Codex account allowance" }
-        let footer = textLabel(footerText, size: 10, color: UsagePalette.secondary)
-        footer.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        footer.toolTip = freshness(owner)
-        let settings = instrumentButton("Settings", target: self, action: #selector(toggleSettings), accent: true)
-        settings.setAccessibilityValue(settingsExpanded ? "Expanded" : "Collapsed")
-        add(horizontal([footer, NSView(), settings]), top: 10, bottom: 14, inset: 14)
-        if settingsExpanded { addSettings(owner) }
+    }
 
-        view.layoutSubtreeIfNeeded()
-        let height = ceil(stack.fittingSize.height)
-        document.setFrameSize(NSSize(width: 350, height: height))
-        let availableHeight = max(200, ((view.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 700) - 60)
-        preferredContentSize = NSSize(width: 350, height: min(height, availableHeight))
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(oldOrigin.y, max(0, height - preferredContentSize.height))))
-        scroll.reflectScrolledClipView(scroll.contentView)
+    @objc private func selectTab(_ sender: NSSegmentedControl) {
+        guard let owner, let tab = DashboardTab(rawValue: sender.selectedSegment) else { return }
+        owner.selectedTab = tab
+        resetScroll = true
+        owner.updateUI()
+        if tab != .allowance { owner.refreshAnalytics() }
+    }
+
+    @objc private func selectRange(_ sender: NSSegmentedControl) {
+        guard let owner, UsageReportingRange.allCases.indices.contains(sender.selectedSegment) else { return }
+        owner.analyticsRange = UsageReportingRange.allCases[sender.selectedSegment]
+        resetScroll = true
+        showAllRepositories = false
+        owner.updateUI()
+    }
+
+    @objc private func toggleRepositories() {
+        showAllRepositories.toggle()
+        owner?.updateUI()
+    }
+
+    private func money(_ amount: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.maximumFractionDigits = amount >= 10_000 ? 0 : 2
+        return formatter.string(from: NSNumber(value: amount)) ?? "—"
+    }
+
+    private func exactTokens(_ amount: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: amount)) ?? "—"
+    }
+
+    private func fixedValue(_ value: String, size: CGFloat = 12) -> NSTextField {
+        let label = textLabel(value, size: size, weight: .medium)
+        label.font = .monospacedDigitSystemFont(ofSize: size, weight: .medium)
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }
+
+    private func historyReadout(_ content: () -> Void) {
+        let readout = NSStackView()
+        readout.orientation = .vertical
+        readout.alignment = .leading
+        readout.spacing = 0
+        readoutStack = readout
+        content()
+        readoutStack = nil
+        add(InstrumentReadout(content: readout), bottom: 16, inset: 14)
+    }
+
+    private func addHistoryContent(_ owner: UsageApp) {
+        let picker = NSSegmentedControl(labels: ["7 days", "30 days", "All available"], trackingMode: .selectOne,
+                                        target: self, action: #selector(selectRange(_:)))
+        picker.selectedSegment = UsageReportingRange.allCases.firstIndex(of: owner.analyticsRange) ?? 2
+        picker.segmentDistribution = .fillEqually
+        picker.controlSize = .small
+        picker.setAccessibilityLabel("Local history date range")
+        add(picker, bottom: 14)
+        guard let analytics = owner.analytics else {
+            historyReadout {
+                add(caption("Local history"), bottom: 10)
+                add(textLabel(owner.isReadingAnalytics ? "Reading your usage…" : "History unavailable", size: 22, weight: .medium), bottom: 12)
+                add(textLabel(owner.analyticsErrorText ?? "The first scan can take a moment. Your allowance is still available.", size: 12, color: UsagePalette.secondary), bottom: 16)
+            }
+            add(textLabel("Token and repository history stays on this Mac.", size: 11, color: UsagePalette.secondary), bottom: 16)
+            add(separator(), inset: 14)
+            return
+        }
+        if owner.selectedTab == .tokens { addTokenHistory(analytics) }
+        else { addRepositoryHistory(analytics) }
+        if let error = owner.analyticsErrorText {
+            add(textLabel(error, size: 11, color: UsagePalette.warning), top: 4, bottom: 10)
+        }
+        if let date = owner.analyticsScannedAt,
+           owner.analyticsErrorText != nil || Date().timeIntervalSince(date) > 900 {
+            add(textLabel("Showing history read \(formatDate(date, "MMM d, h:mm a")).", size: 11, color: UsagePalette.secondary), bottom: 10)
+        }
+        if let warning = owner.analyticsWarning {
+            add(textLabel(warning, size: 11, color: UsagePalette.warning), bottom: 10)
+        }
+        add(textLabel("Local logs only · other devices and deleted history may be missing.", size: 10, color: UsagePalette.secondary), top: 4, bottom: 14)
+        add(separator(), inset: 14)
+    }
+
+    private func historyPeriod(_ analytics: UsageAnalytics) -> String {
+        "\(formatDate(analytics.startDate, "MMM d, yyyy")) – \(formatDate(analytics.endDate, "MMM d, yyyy"))"
+    }
+
+    private func addTokenHistory(_ analytics: UsageAnalytics) {
+        historyReadout {
+            add(caption("Total tokens"), bottom: 5)
+            let headline = fixedValue(compactTokens(analytics.totalTokens), size: 44)
+            headline.toolTip = "\(exactTokens(analytics.totalTokens)) input + output tokens"
+            headline.setAccessibilityValue("\(exactTokens(analytics.totalTokens)) tokens")
+            add(headline, bottom: 4)
+            add(textLabel(historyPeriod(analytics), size: 10, color: UsagePalette.secondary), bottom: 12)
+            if analytics.totalTokens > 0 { add(DailyTokenChart(days: analytics.days), bottom: 14) }
+            else { add(textLabel("No token activity found in this range.", size: 12, color: UsagePalette.secondary), top: 4, bottom: 18) }
+            add(separator(), bottom: 12)
+            for (label, value) in [("Input", analytics.inputTokens), ("Output", analytics.outputTokens)] {
+                let row = horizontal([textLabel(label, size: 12), NSView(), fixedValue(compactTokens(value))])
+                row.toolTip = "\(exactTokens(value)) tokens"
+                add(row, bottom: 7)
+            }
+            let cache = textLabel("\(compactTokens(analytics.cachedInputTokens)) cached · included in input", size: 10, color: UsagePalette.secondary)
+            cache.toolTip = "\(exactTokens(analytics.cachedInputTokens)) cached input tokens. Cached input is counted once; reasoning is included in output."
+            add(cache, top: 2, bottom: 16)
+        }
+        if !analytics.models.isEmpty {
+            add(caption("By model"), bottom: 12)
+            for model in analytics.models {
+                let name = textLabel(model.model, size: 12)
+                name.lineBreakMode = .byTruncatingMiddle
+                name.maximumNumberOfLines = 1
+                let row = horizontal([name, NSView(), fixedValue(compactTokens(model.tokens))])
+                row.toolTip = "\(model.model): \(exactTokens(model.tokens)) tokens"
+                add(vertical([row, AnalyticsBar(fraction: model.tokens / max(1, analytics.totalTokens))], spacing: 6), bottom: 13)
+            }
+        }
+    }
+
+    private func addRepositoryHistory(_ analytics: UsageAnalytics) {
+        historyReadout {
+            add(caption("API-equivalent estimate"), bottom: 6)
+            let hasCost = analytics.pricedTokens > 0
+            let headline = fixedValue(hasCost ? "≈" + money(analytics.estimatedCostUSD) : "—", size: 32)
+            headline.toolTip = pricingExplanation
+            add(headline, bottom: 5)
+            add(textLabel(historyPeriod(analytics), size: 10, color: UsagePalette.secondary), bottom: 12)
+            if analytics.totalTokens == 0 {
+                add(textLabel("No token activity found in this range.", size: 12, color: UsagePalette.secondary), bottom: 16)
+            } else if analytics.unpricedTokens > 0 {
+                let coverage = 100 * analytics.pricedTokens / max(1, analytics.totalTokens)
+                add(textLabel("Prices cover \(Int(coverage.rounded(.down)))% of tokens. \(compactTokens(analytics.unpricedTokens)) unpriced.", size: 11, color: UsagePalette.secondary), bottom: 12)
+            }
+            let explanation = textLabel("Standard API prices · not your subscription bill", size: 10, color: UsagePalette.secondary)
+            explanation.toolTip = pricingExplanation
+            add(explanation, bottom: 16)
+        }
+        if !analytics.repositories.isEmpty {
+            add(horizontal([caption("By repository"), NSView(), caption("USD")]), bottom: 14)
+            let maximum = analytics.repositories.map(\.costUSD).max() ?? 0
+            let duplicates = Dictionary(grouping: analytics.repositories, by: \.name)
+            for repository in analytics.repositories.prefix(showAllRepositories ? analytics.repositories.count : 8) {
+                let name = textLabel(repository.name, size: 12, weight: .medium)
+                name.lineBreakMode = .byTruncatingMiddle
+                name.maximumNumberOfLines = 1
+                let costText = repository.pricedTokens > 0 ? money(repository.costUSD) + (repository.unpricedTokens > 0 ? "+" : "") : "Unpriced"
+                let row = horizontal([name, NSView(), fixedValue(costText)])
+                let partial = repository.unpricedTokens > 0 && repository.pricedTokens > 0 ? " · partial estimate" : ""
+                var detail = "\(compactTokens(repository.tokens)) tokens\(partial)"
+                if (duplicates[repository.name]?.count ?? 0) > 1, let path = repository.path {
+                    detail += " · " + URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
+                }
+                let subtitle = textLabel(detail, size: 10, color: UsagePalette.secondary)
+                subtitle.maximumNumberOfLines = 1
+                subtitle.lineBreakMode = .byTruncatingMiddle
+                var content: [NSView] = [row, subtitle]
+                if repository.pricedTokens > 0 { content.append(AnalyticsBar(fraction: repository.costUSD / max(0.01, maximum))) }
+                let group = vertical(content, spacing: 5)
+                group.toolTip = (repository.path ?? "No working directory in the local log") + "\n\(exactTokens(repository.tokens)) tokens · \(exactTokens(repository.unpricedTokens)) unpriced"
+                add(group, bottom: 16)
+            }
+            if analytics.repositories.count > 8 {
+                let title = showAllRepositories ? "Show fewer" : "Show all \(analytics.repositories.count) repositories"
+                add(instrumentButton(title, target: self, action: #selector(toggleRepositories)), bottom: 14)
+            }
+            let note = textLabel("Estimates exclude cache-write charges, long-context uplifts, tools and speed tiers.", size: 10, color: UsagePalette.secondary)
+            note.toolTip = pricingExplanation
+            add(note, bottom: 10)
+        }
+    }
+
+    private var pricingExplanation: String {
+        "\(ModelPricing.basis), checked \(ModelPricing.checkedAt). Cached input is priced separately and counted once. Unknown model prices are excluded from dollars. Excludes cache writes, long-context uplifts, tool charges and speed tiers; actual API costs may be higher. \(ModelPricing.sourceURL)"
     }
 
     private func addAllowance(_ window: UsageWindow) {

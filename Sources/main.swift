@@ -9,6 +9,7 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let dashboard = DashboardController()
     private let provider = UsageProvider()
     private let historyReader = LocalUsageHistoryReader()
+    private let analyticsReader = LocalUsageHistoryReader()
     private var refreshTimer: Timer?
     private var clockTimer: Timer?
     private var wakeObserver: NSObjectProtocol?
@@ -20,6 +21,15 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var historyErrorText: String?
     var isReadingHistory = false
     var selectedTimelineID: String?
+    var selectedTab: DashboardTab = .allowance
+    var analyticsRange: UsageReportingRange = .all
+    var analyticsSummaries: [UsageReportingRange: UsageAnalytics] = [:]
+    var analyticsScannedAt: Date?
+    var analyticsWarning: String?
+    var analyticsErrorText: String?
+    var isReadingAnalytics = false
+    private var hasRequestedAnalytics = false
+    var analytics: UsageAnalytics? { analyticsSummaries[analyticsRange] }
     var timelineResetDate: Date? {
         guard errorText == nil, let snapshot, Date().timeIntervalSince(snapshot.fetchedAt) <= 600,
               snapshot.ordinaryUsageAllowed != false, let reset = statusWindow?.resetsAt,
@@ -156,6 +166,7 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc func refreshNow() {
         guard !isRefreshing else { return }
         refreshHistory()
+        if hasRequestedAnalytics { refreshAnalytics(force: true) }
         isRefreshing = true
         updateUI()
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -183,6 +194,40 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 switch result {
                 case .success(let history): self.history = history; self.historyErrorText = nil
                 case .failure: self.historyErrorText = "Could not read local usage history. Allowance still refreshes normally."
+                }
+                self.updateUI()
+            }
+        }
+    }
+
+    /// All-history scans and aggregation are independent of the short forecast
+    /// reader. Opening the menu or changing a range never parses logs on main.
+    func refreshAnalytics(force: Bool = false) {
+        hasRequestedAnalytics = true
+        guard !isReadingAnalytics else { return }
+        if !force, let scanned = analyticsScannedAt, Date().timeIntervalSince(scanned) < 300 { return }
+        isReadingAnalytics = true
+        updateUI()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let result = Result { () -> (Date, String?, [UsageReportingRange: UsageAnalytics]) in
+                let now = Date()
+                let history = try self.analyticsReader.read(now: now, lookbackDays: nil)
+                let summaries = Dictionary(uniqueKeysWithValues: UsageReportingRange.allCases.map {
+                    ($0, UsageAnalytics.summarize(history, range: $0, now: now))
+                })
+                return (history.scannedAt, history.warning, summaries)
+            }
+            DispatchQueue.main.async {
+                self.isReadingAnalytics = false
+                switch result {
+                case .success(let (scanned, warning, summaries)):
+                    self.analyticsScannedAt = scanned
+                    self.analyticsWarning = warning
+                    self.analyticsSummaries = summaries
+                    self.analyticsErrorText = nil
+                case .failure:
+                    self.analyticsErrorText = "Could not read local usage history. Try Refresh now in Settings."
                 }
                 self.updateUI()
             }

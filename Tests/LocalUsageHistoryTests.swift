@@ -8,6 +8,10 @@ struct LocalUsageHistoryTests {
         try testModernAndQuotaMetadata()
         try testLegacyAndForks()
         try testCacheAndStreaming()
+        try testRepositoryAttribution()
+        try testMissingTurnRepository()
+        try testInvalidTokenCounters()
+        try testWideningHistory()
         if CommandLine.arguments.contains("--live") {
             let reader = LocalUsageHistoryReader()
             let began = Date()
@@ -18,7 +22,7 @@ struct LocalUsageHistoryTests {
             let second = try reader.read()
             print("Warm scan: \(String(format: "%.2f", Date().timeIntervalSince(warm)))s; \(second.events.count) events; incomplete=\(history.warning != nil)")
         }
-        print("PASS: local metadata parsing, request deduplication, fork exclusion, legacy deltas, quotas, streaming, cache")
+        print("PASS: local metadata parsing, request deduplication, fork exclusion, legacy deltas, quotas, streaming, repository attribution, missing turn directories, valid token counters, widening cache")
     }
 
     static func expect(_ condition: Bool, _ message: String) {
@@ -41,14 +45,17 @@ struct LocalUsageHistoryTests {
         return "{\"timestamp\":\"\(object["timestamp"]!)\",\"type\":\"\(type)\",\"payload\":\(String(decoding: data, as: UTF8.self))}\n"
     }
 
-    static func meta(_ id: String, at: Date, fork: String? = nil) -> String {
+    static func meta(_ id: String, at: Date, fork: String? = nil, cwd: String? = nil) -> String {
         var payload: [String: Any] = ["id": id]
         if let fork { payload["forked_from_id"] = fork }
+        if let cwd { payload["cwd"] = cwd }
         return line("session_meta", payload, at: at)
     }
 
-    static func context(_ model: String, turn: String, at: Date) -> String {
-        line("turn_context", ["model": model, "turn_id": turn], at: at)
+    static func context(_ model: String, turn: String, at: Date, cwd: String? = nil) -> String {
+        var payload: [String: Any] = ["model": model, "turn_id": turn]
+        if let cwd { payload["cwd"] = cwd }
+        return line("turn_context", payload, at: at)
     }
 
     static func tokens(_ input: Int, _ cached: Int = 0, _ output: Int = 10) -> [String: Any] {
@@ -163,6 +170,133 @@ struct LocalUsageHistoryTests {
             try append.seekToEnd(); try append.write(contentsOf: Data([10])); try append.close()
             expect(try reader.read(now: now).events.count == 2, "Completed append read on next refresh")
             expect(try reader.read(now: now.addingTimeInterval(8 * 86_400)).events.isEmpty, "Cache ages out with lookback")
+        }
+    }
+
+    static func testRepositoryAttribution() throws {
+        try fixture { root, now in
+            let manager = FileManager.default
+            let first = root.appendingPathComponent("projects/one/shared")
+            let second = root.appendingPathComponent("projects/two/shared")
+            let worktree = first.appendingPathComponent("nested-worktree")
+            let loose = root.appendingPathComponent("not-a-repository")
+            for directory in [first.appendingPathComponent("Sources/Subdir"), second, worktree, loose] {
+                try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            try manager.createDirectory(at: first.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            try manager.createDirectory(at: second.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            // A worktree .git file is a root marker; its content is never read.
+            try "gitdir: unused-fixture-metadata\n".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+            let alias = root.appendingPathComponent("project-alias")
+            try manager.createSymbolicLink(at: alias, withDestinationURL: first)
+            let at = now.addingTimeInterval(-60)
+            var text = meta("repos", at: at, cwd: first.appendingPathComponent("Sources/Subdir").path)
+            text += context("model-a", turn: "first", at: at)
+            text += context("model-b", turn: "second", at: at, cwd: second.path)
+            text += request("r-first", owner: "repos", turn: "first", input: 100, at: at)
+            text += request("r-second", owner: "repos", turn: "second", input: 200, at: at)
+            text += context("model-a", turn: "nested", at: at, cwd: worktree.path)
+            text += request("r-nested", owner: "repos", turn: "nested", input: 300, at: at)
+            text += context("model-a", turn: "alias", at: at, cwd: alias.appendingPathComponent("Sources/../Sources").path)
+            text += request("r-alias", owner: "repos", turn: "alias", input: 400, at: at)
+            text += context("model-a", turn: "loose", at: at, cwd: loose.path)
+            text += request("r-loose", owner: "repos", turn: "loose", input: 500, at: at)
+            _ = try write(text, "sessions/repos.jsonl", root: root)
+            _ = try write(text, "archived_sessions/repos-copy.jsonl", root: root)
+            let unknown = meta("unknown", at: at, cwd: "relative/path") + context("model-a", turn: "x", at: at)
+                + request("r-unknown", owner: "unknown", turn: "x", input: 600, at: at)
+            _ = try write(unknown, "sessions/unknown.jsonl", root: root)
+            let legacyText = meta("repo-legacy", at: at, cwd: second.path) + context("model-a", turn: "l", at: at)
+                + legacy(700, 10, at: at, last: true)
+            _ = try write(legacyText, "sessions/legacy-repo.jsonl", root: root)
+            let history = try LocalUsageHistoryReader(root: root).read(now: now)
+            let paths = Dictionary(uniqueKeysWithValues: history.events.map { ($0.inputTokens, $0.repositoryPath) })
+            func canonical(_ url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
+            expect(history.events.count == 7, "Archive copies remain deduplicated with repository metadata")
+            expect(paths[100] == canonical(first), "Nearest .git ancestor and turn-ID attribution beat latest cwd")
+            expect(paths[200] == canonical(second), "Same-name roots retain separate full paths")
+            expect(paths[300] == canonical(worktree), "Nested worktree .git file stops ancestor lookup")
+            expect(paths[400] == canonical(first), "Symlink and dot components normalize to the same repository")
+            expect(paths[500] == canonical(loose), "Non-repository usage retains its logged directory")
+            expect(history.events.first { $0.inputTokens == 600 }?.repositoryPath == nil, "Relative cwd remains unattributed")
+            expect(paths[700] == canonical(second), "Legacy metadata also retains repository attribution")
+        }
+    }
+
+    static func testMissingTurnRepository() throws {
+        try fixture { root, now in
+            let at = now.addingTimeInterval(-60)
+            let directory = root.appendingPathComponent("project")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var text = meta("missing-cwd", at: at)
+            text += context("model-a", turn: "unknown-early", at: at)
+            text += context("model-b", turn: "known", at: at, cwd: directory.path)
+            text += request("unknown-delayed", owner: "missing-cwd", turn: "unknown-early", input: 100, at: at)
+            text += request("known", owner: "missing-cwd", turn: "known", input: 200, at: at)
+            text += context("model-a", turn: "unknown-later", at: at)
+            text += request("unknown-later", owner: "missing-cwd", turn: "unknown-later", input: 300, at: at)
+            text += request("known-delayed", owner: "missing-cwd", turn: "known", input: 400, at: at)
+            _ = try write(text, "sessions/missing-cwd.jsonl", root: root)
+            let events = try LocalUsageHistoryReader(root: root).read(now: now).events
+            expect(events.count == 4, "All owned requests survive unknown repository metadata")
+            expect(events.filter { $0.inputTokens == 100 || $0.inputTokens == 300 }.allSatisfy { $0.repositoryPath == nil },
+                   "Missing turn cwd stays unknown before and after a known repository, including delayed usage")
+            let canonical = directory.standardizedFileURL.resolvingSymlinksInPath().path
+            expect(events.filter { $0.inputTokens == 200 || $0.inputTokens == 400 }.allSatisfy { $0.repositoryPath == canonical },
+                   "Delayed requests keep their known turn's repository")
+        }
+    }
+
+    static func testInvalidTokenCounters() throws {
+        try fixture { root, now in
+            let at = now.addingTimeInterval(-60)
+            var text = meta("counters", at: at) + context("model-a", turn: "a", at: at)
+            let invalid: [[String: Any]] = [
+                ["input_tokens": 1e100, "cached_input_tokens": 0, "output_tokens": 10],
+                ["input_tokens": 9_007_199_254_740_992.0, "cached_input_tokens": 0, "output_tokens": 10],
+                ["input_tokens": 100.5, "cached_input_tokens": 0, "output_tokens": 10],
+                ["input_tokens": 100, "cached_input_tokens": 10.5, "output_tokens": 10],
+                ["input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 10.5],
+                ["input_tokens": 100, "cached_input_tokens": 101, "output_tokens": 10],
+                ["input_tokens": -1, "cached_input_tokens": 0, "output_tokens": 10],
+                ["input_tokens": true, "cached_input_tokens": 0, "output_tokens": 10]
+            ]
+            for (index, usage) in invalid.enumerated() {
+                text += line("token_usage_record", ["response_id": "invalid-\(index)", "thread_id": "counters",
+                             "turn_id": "a", "usage": usage], at: at)
+            }
+            text += request("valid-counter", owner: "counters", turn: "a", input: 100, at: at)
+            _ = try write(text, "sessions/counters.jsonl", root: root)
+            let history = try LocalUsageHistoryReader(root: root).read(now: now)
+            expect(history.events.count == 1 && history.events[0].totalTokens == 110,
+                   "Only finite nonnegative safe integer counters with cached input as a subset are counted")
+            expect(history.warning != nil, "Malformed request counters surface incomplete history")
+        }
+    }
+
+    static func testWideningHistory() throws {
+        try fixture { root, now in
+            let recent = now.addingTimeInterval(-86_400)
+            let monthly = now.addingTimeInterval(-20 * 86_400)
+            let old = now.addingTimeInterval(-40 * 86_400)
+            let ancient = now.addingTimeInterval(-60 * 86_400)
+            let text = meta("a-stream", at: old) + context("model-a", turn: "a", at: old)
+                + request("r-old", owner: "a-stream", turn: "a", at: old)
+                + request("r-month", owner: "a-stream", turn: "a", at: monthly)
+                + request("r-recent", owner: "a-stream", turn: "a", at: recent)
+            _ = try write(text, "sessions/a-stream.jsonl", root: root)
+            let oldFile = try write(meta("b-old", at: ancient) + context("model-a", turn: "a", at: ancient)
+                + request("r-ancient", owner: "b-old", turn: "a", at: ancient)
+                + request("r-old", owner: "b-old", turn: "a", at: old), "archived_sessions/old.jsonl", root: root)
+            try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: oldFile.path)
+            let reader = LocalUsageHistoryReader(root: root)
+            expect(try reader.read(now: now).events.count == 1, "Default forecast range remains rolling seven days")
+            expect(try reader.read(now: now, lookbackDays: 30).events.count == 2, "Wider range reparses an unchanged recent file")
+            let all = try reader.read(now: now, lookbackDays: nil)
+            expect(all.events.count == 4, "All available includes old-mtime archives and deduplicates responses across files")
+            expect(abs(all.lookbackStart.timeIntervalSince(ancient)) < 1, "All-history start is observed activity, not distantPast")
+            expect(try reader.read(now: now).events.count == 1, "A wider cached parse filters down to the default range")
+            expect(try reader.read(now: now, lookbackDays: nil).events.count == 4, "Widening again preserves all history")
         }
     }
 }

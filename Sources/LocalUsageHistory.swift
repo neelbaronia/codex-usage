@@ -8,7 +8,19 @@ struct LocalUsageEvent: Equatable {
     let inputTokens: Double
     let cachedInputTokens: Double
     let outputTokens: Double
+    /// Canonical repository root, or the logged directory if no .git exists.
+    let repositoryPath: String?
     var totalTokens: Double { inputTokens + outputTokens }
+
+    init(timestamp: Date, model: String, inputTokens: Double, cachedInputTokens: Double,
+         outputTokens: Double, repositoryPath: String? = nil) {
+        self.timestamp = timestamp
+        self.model = model
+        self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
+        self.outputTokens = outputTokens
+        self.repositoryPath = repositoryPath
+    }
 }
 
 struct LocalQuotaSample: Equatable {
@@ -29,11 +41,12 @@ struct LocalUsageHistory {
 }
 
 /// Synchronous, read-only reader. Call on the app's background refresh queue.
-/// Only numerical usage and model/request identity metadata survive parsing.
+/// Only numerical usage, model/request identity, and repository paths survive parsing.
 /// Unchanged files are cached in memory; no history database is written.
 final class LocalUsageHistoryReader {
     private let root: URL
     private var cache: [String: CachedFile] = [:]
+    private var repositories: [String: String] = [:]
     private let lock = NSLock()
     private let fractionalDate = ISO8601DateFormatter()
     private let wholeDate = ISO8601DateFormatter()
@@ -46,10 +59,12 @@ final class LocalUsageHistoryReader {
         wholeDate.formatOptions = [.withInternetDateTime]
     }
 
-    func read(now: Date = Date()) throws -> LocalUsageHistory {
+    /// The forecast keeps its original rolling seven-day default. nil reads all
+    /// available files; widening the range reparses narrower cached snapshots.
+    func read(now: Date = Date(), lookbackDays: Int? = 7) throws -> LocalUsageHistory {
         lock.lock()
         defer { lock.unlock() }
-        let cutoff = now.addingTimeInterval(-7 * 86_400)
+        let cutoff = lookbackDays.map { now.addingTimeInterval(-Double(max(1, $0)) * 86_400) } ?? .distantPast
         let manager = FileManager.default
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
         var candidates: [(URL, Int, Date)] = []
@@ -102,7 +117,9 @@ final class LocalUsageHistoryReader {
         var seenQuotas = Set<QuotaIdentity>()
         var events: [LocalUsageEvent] = []
         var quotas: [LocalQuotaSample] = []
-        for parsed in sessions.values {
+        // Session ordering makes cross-file response attribution deterministic.
+        for id in sessions.keys.sorted() {
+            guard let parsed = sessions[id] else { continue }
             for entry in parsed.events where entry.event.timestamp >= cutoff && entry.event.timestamp <= now {
                 if let response = entry.responseID, !seenResponses.insert(response).inserted { continue }
                 events.append(entry.event)
@@ -121,8 +138,9 @@ final class LocalUsageHistoryReader {
         } else {
             warning = nil
         }
+        let availableStart = min(events.first?.timestamp ?? now, quotas.first?.timestamp ?? now)
         return LocalUsageHistory(events: events, quotaSamples: quotas, scannedAt: now,
-                                 lookbackStart: cutoff, warning: warning)
+                                 lookbackStart: lookbackDays == nil ? availableStart : cutoff, warning: warning)
     }
 
     private struct CachedFile {
@@ -173,9 +191,9 @@ final class LocalUsageHistoryReader {
             return result.cached <= result.input ? result : nil
         }
 
-        func event(at date: Date, model: String) -> LocalUsageEvent {
+        func event(at date: Date, model: String, repositoryPath: String?) -> LocalUsageEvent {
             LocalUsageEvent(timestamp: date, model: model, inputTokens: input,
-                            cachedInputTokens: cached, outputTokens: output)
+                            cachedInputTokens: cached, outputTokens: output, repositoryPath: repositoryPath)
         }
     }
 
@@ -186,6 +204,9 @@ final class LocalUsageHistoryReader {
         var startedAt: Date?
         var model = "unknown"
         var turnModels: [String: String] = [:]
+        var sessionRepository: String?
+        var repository: String?
+        var turnRepositories: [String: String] = [:]
         var modern: [IdentifiedEvent] = []
         var legacy: [IdentifiedEvent] = []
         var quotas: [LocalQuotaSample] = []
@@ -211,13 +232,19 @@ final class LocalUsageHistoryReader {
                     sessionID = self.identifier(payload["id"]) ?? self.identifier(payload["session_id"]) ?? sessionID
                     isFork = self.identifier(payload["forked_from_id"]) != nil
                     startedAt = self.date(payload["timestamp"]) ?? timestamp
+                    sessionRepository = self.repository(for: payload["cwd"])
+                    repository = sessionRepository
                     metadataSeen = true
                 }
                 return
             }
             if type == "turn_context" {
                 model = self.identifier(payload["model"]) ?? "unknown"
-                if let turn = self.identifier(payload["turn_id"]) { turnModels[turn] = model }
+                repository = self.repository(for: payload["cwd"]) ?? sessionRepository
+                if let turn = self.identifier(payload["turn_id"]) {
+                    turnModels[turn] = model
+                    turnRepositories[turn] = repository
+                }
                 return
             }
             guard let timestamp else { return }
@@ -251,8 +278,18 @@ final class LocalUsageHistoryReader {
                     return
                 }
                 guard seenResponses.insert(response).inserted else { return }
-                let selectedModel = self.identifier(payload["turn_id"]).flatMap { turnModels[$0] } ?? model
-                modern.append(IdentifiedEvent(event: tokens.event(at: timestamp, model: selectedModel), responseID: response))
+                let turn = self.identifier(payload["turn_id"])
+                let selectedModel = turn.flatMap { turnModels[$0] } ?? model
+                // A known turn with no directory must remain unattributed,
+                // even if its usage arrives after a different turn's context.
+                let selectedRepository: String?
+                if let turn, turnModels[turn] != nil {
+                    selectedRepository = turnRepositories[turn]
+                } else {
+                    selectedRepository = repository ?? sessionRepository
+                }
+                modern.append(IdentifiedEvent(event: tokens.event(at: timestamp, model: selectedModel,
+                                                                  repositoryPath: selectedRepository), responseID: response))
                 return
             }
             guard type == "event_msg", payload["type"] as? String == "token_count" else { return }
@@ -294,7 +331,8 @@ final class LocalUsageHistoryReader {
             }
             previous = current
             guard let delta, timestamp >= cutoff, delta.input + delta.output > 0 else { return }
-            legacy.append(IdentifiedEvent(event: delta.event(at: timestamp, model: model), responseID: nil))
+            legacy.append(IdentifiedEvent(event: delta.event(at: timestamp, model: model,
+                                                            repositoryPath: repository ?? sessionRepository), responseID: nil))
         } onOversizedMetadata: {
             incomplete = true
         }
@@ -329,13 +367,18 @@ final class LocalUsageHistoryReader {
     }
 
     private func tokens(_ value: Any?) -> Tokens? {
+        func counter(_ value: Any?) -> Double? {
+            guard let value = number(value), value >= 0,
+                  value <= 9_007_199_254_740_991, value.rounded(.towardZero) == value else { return nil }
+            return value
+        }
         guard let object = value as? [String: Any],
-              let input = number(object["input_tokens"]), input >= 0,
-              let output = number(object["output_tokens"]), output >= 0 else { return nil }
+              let input = counter(object["input_tokens"]),
+              let output = counter(object["output_tokens"]) else { return nil }
         let cached: Double
         if object["cached_input_tokens"] == nil || object["cached_input_tokens"] is NSNull {
             cached = 0
-        } else if let value = number(object["cached_input_tokens"]), value >= 0, value <= input {
+        } else if let value = counter(object["cached_input_tokens"]), value <= input {
             cached = value
         } else { return nil }
         guard (input + output).isFinite else { return nil }
@@ -346,6 +389,27 @@ final class LocalUsageHistoryReader {
         guard let value = value as? String, !value.isEmpty, value.utf8.count <= 256,
               value.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || "-_.:/".unicodeScalars.contains($0) }) else { return nil }
         return value
+    }
+
+    /// Match codex-cost's nearest .git ancestor without invoking Git or reading
+    /// its configuration. Keep full paths so same-name projects stay separate.
+    private func repository(for value: Any?) -> String? {
+        guard let path = value as? String, path.hasPrefix("/"), path.utf8.count <= 4_096,
+              path.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        if let cached = repositories[path] { return cached }
+        let directory = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        var current = directory
+        while true {
+            if FileManager.default.fileExists(atPath: current.appendingPathComponent(".git").path) {
+                repositories[path] = current.path
+                return current.path
+            }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            current = parent
+        }
+        repositories[path] = directory.path
+        return directory.path
     }
 
     private func date(_ value: Any?) -> Date? {

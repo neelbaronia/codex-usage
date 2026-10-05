@@ -75,6 +75,9 @@ for ARCH in $ARCHITECTURES; do
     "$PROJECT_DIR/Sources/LocalUsageHistory.swift" \
     "$PROJECT_DIR/Sources/UsageForecast.swift" \
     "$PROJECT_DIR/Sources/ModelUsageRates.swift" \
+    "$PROJECT_DIR/Sources/ModelPricing.swift" \
+    "$PROJECT_DIR/Sources/UsageAnalytics.swift" \
+    "$PROJECT_DIR/Sources/AnalyticsViews.swift" \
     "$PROJECT_DIR/Sources/UsageTimeline.swift" \
     "$PROJECT_DIR/Sources/UsageBrand.swift" \
     "$PROJECT_DIR/Sources/Dashboard.swift" \

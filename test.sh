@@ -18,3 +18,9 @@ xcrun swiftc -O -swift-version 5 Sources/UsageModels.swift Sources/UsageProvider
 xcrun swiftc -O -swift-version 5 Sources/LocalUsageHistory.swift Sources/ModelUsageRates.swift \
   Tests/ModelUsageRatesTests.swift -o "$TEST_BUILD_DIR/rates"
 "$TEST_BUILD_DIR/rates"
+xcrun swiftc -O -swift-version 5 Sources/ModelPricing.swift \
+  Tests/ModelPricingTests.swift -o "$TEST_BUILD_DIR/pricing"
+"$TEST_BUILD_DIR/pricing"
+xcrun swiftc -O -swift-version 5 Sources/LocalUsageHistory.swift Sources/ModelPricing.swift \
+  Sources/UsageAnalytics.swift Tests/UsageAnalyticsTests.swift -o "$TEST_BUILD_DIR/analytics"
+"$TEST_BUILD_DIR/analytics"
