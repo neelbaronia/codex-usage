@@ -49,8 +49,8 @@ final class UsageTimelineView: NSView {
         }
         let resetX = x(reset)
         let endX = end.map(x)
-        let amber = NSColor.systemOrange.withAlphaComponent(0.88)
-        let green = NSColor.systemGreen.withAlphaComponent(0.90)
+        let amber = UsagePalette.accent
+        let green = UsagePalette.meter
         let markerClearance: CGFloat = 12
         // Keep x positions proportional. Colliding markers move vertically,
         // with a fine leader back to their true point on the time axis.
@@ -60,9 +60,9 @@ final class UsageTimelineView: NSView {
         }
 
         stroke(from: NSPoint(x: left, y: y), to: NSPoint(x: right, y: y),
-               color: .separatorColor, width: 1.5)
+               color: UsagePalette.lcdEdge, width: 1.5)
         if let endX, endX > left {
-            stroke(from: NSPoint(x: left, y: y), to: NSPoint(x: endX, y: y), color: amber, width: 2)
+            stroke(from: NSPoint(x: left, y: y), to: NSPoint(x: endX, y: y), color: UsagePalette.warning, width: 2)
         }
 
         let resetWidth: CGFloat = 54
@@ -81,7 +81,7 @@ final class UsageTimelineView: NSView {
         let dayFormatter = DateFormatter()
         dayFormatter.dateFormat = "EEE"
         let dayAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: UsagePalette.secondary
         ]
         var day = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
         var count = 0
@@ -97,7 +97,7 @@ final class UsageTimelineView: NSView {
             if !coincidesWithStaggeredEnd {
                 stroke(from: NSPoint(x: position, y: y + (nearMarker ? 6 : -4)),
                        to: NSPoint(x: position, y: y + (nearMarker ? 11 : 5)),
-                       color: NSColor.secondaryLabelColor.withAlphaComponent(0.55), width: 1)
+                       color: UsagePalette.secondary.withAlphaComponent(0.55), width: 1)
             }
             let dayText = dayFormatter.string(from: tick) as NSString
             let labelWidth = ceil(dayText.size(withAttributes: dayAttributes).width)
@@ -119,7 +119,7 @@ final class UsageTimelineView: NSView {
         stroke(from: NSPoint(x: resetX, y: resetY), to: NSPoint(x: resetAnchor, y: 27),
                color: green.withAlphaComponent(0.45), width: 0.75)
         label(Self.shortDate(reset), subtitle: "Reset", x: resetLabelX, y: 0,
-              width: resetWidth, color: .secondaryLabelColor,
+              width: resetWidth, color: UsagePalette.secondary,
               alignment: resetAlignedRight ? .right : .center)
 
         if let end, let endX, let endY {
@@ -128,21 +128,21 @@ final class UsageTimelineView: NSView {
             let labelX = min(max(0, endX - labelWidth / 2), max(0, bounds.width - labelWidth))
             let labelAnchor = min(max(endX, labelX + 4), labelX + labelWidth - 4)
             stroke(from: NSPoint(x: endX, y: y), to: NSPoint(x: endX, y: endY),
-                   color: amber.withAlphaComponent(0.45), width: 0.75)
+                   color: UsagePalette.warning.withAlphaComponent(0.7), width: 0.75)
             stroke(from: NSPoint(x: endX, y: endY), to: NSPoint(x: labelAnchor, y: 50),
-                   color: amber.withAlphaComponent(0.45), width: 0.75)
+                   color: UsagePalette.warning.withAlphaComponent(0.7), width: 0.75)
             label(Self.shortDate(end), subtitle: subtitle, x: labelX, y: 53,
-                  width: labelWidth, color: .secondaryLabelColor,
+                  width: labelWidth, color: UsagePalette.secondary,
                   alignment: labelX == 0 ? .left : (labelX + labelWidth >= bounds.width ? .right : .center))
         }
 
         // Draw markers after leaders so their centres stay clean.
-        NSColor.systemBlue.setFill()
+        UsagePalette.ink.setFill()
         NSBezierPath(ovalIn: NSRect(x: left - 3.5, y: y - 3.5, width: 7, height: 7)).fill()
-        singleLabel("Now", rect: NSRect(x: 0, y: 2, width: 35, height: 14), color: .secondaryLabelColor)
+        singleLabel("Now", rect: NSRect(x: 0, y: 2, width: 35, height: 14), color: UsagePalette.secondary)
 
         let resetDot = NSBezierPath(ovalIn: NSRect(x: resetX - 4, y: resetY - 4, width: 8, height: 8))
-        NSColor.controlBackgroundColor.setFill()
+        UsagePalette.lcdBottom.setFill()
         resetDot.fill()
         green.setStroke()
         resetDot.lineWidth = 1.5
@@ -157,9 +157,12 @@ final class UsageTimelineView: NSView {
             diamond.close()
             amber.setFill()
             diamond.fill()
+            UsagePalette.warning.setStroke()
+            diamond.lineWidth = 0.75
+            diamond.stroke()
             if clipped {
-                stroke(from: NSPoint(x: right + 5, y: endY - 3), to: NSPoint(x: right + 9, y: endY), color: amber, width: 1)
-                stroke(from: NSPoint(x: right + 9, y: endY), to: NSPoint(x: right + 5, y: endY + 3), color: amber, width: 1)
+                stroke(from: NSPoint(x: right + 5, y: endY - 3), to: NSPoint(x: right + 9, y: endY), color: UsagePalette.warning, width: 1)
+                stroke(from: NSPoint(x: right + 9, y: endY), to: NSPoint(x: right + 5, y: endY + 3), color: UsagePalette.warning, width: 1)
             }
         }
     }
@@ -180,7 +183,7 @@ final class UsageTimelineView: NSView {
             .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: color, .paragraphStyle: paragraph
         ]
         let dateAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph
+            .font: NSFont.systemFont(ofSize: 9), .foregroundColor: UsagePalette.secondary, .paragraphStyle: paragraph
         ]
         (title as NSString).draw(in: NSRect(x: x, y: y, width: width, height: 13), withAttributes: titleAttributes)
         (subtitle as NSString).draw(in: NSRect(x: x, y: y + 13, width: width, height: 12), withAttributes: dateAttributes)

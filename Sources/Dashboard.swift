@@ -11,12 +11,18 @@ func runwayTime(_ hours: Double) -> String {
 }
 
 private func textLabel(_ text: String, size: CGFloat = 13, weight: NSFont.Weight = .regular,
-                       color: NSColor = .labelColor) -> NSTextField {
+                       color: NSColor = UsagePalette.ink) -> NSTextField {
     let label = NSTextField(wrappingLabelWithString: text)
     label.font = .systemFont(ofSize: size, weight: weight)
     label.textColor = color
     label.isSelectable = false
     label.setContentCompressionResistancePriority(.required, for: .vertical)
+    return label
+}
+
+private func caption(_ text: String, size: CGFloat = 10) -> NSTextField {
+    let label = textLabel(text.uppercased(), size: size, color: UsagePalette.secondary)
+    label.font = .monospacedSystemFont(ofSize: size, weight: .medium)
     return label
 }
 
@@ -40,11 +46,16 @@ private func horizontal(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView 
     return stack
 }
 
-private func separator() -> NSBox {
-    let view = NSBox()
-    view.boxType = .separator
-    return view
+private final class EngravedRule: NSView {
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 2) }
+    override func draw(_ dirtyRect: NSRect) {
+        UsagePalette.ink.withAlphaComponent(0.18).setFill()
+        NSRect(x: 0, y: 1, width: bounds.width, height: 0.5).fill()
+        NSColor.white.withAlphaComponent(0.48).setFill()
+        NSRect(x: 0, y: 0.5, width: bounds.width, height: 0.5).fill()
+    }
 }
+private func separator() -> NSView { EngravedRule() }
 
 private func compactTokens(_ tokens: Double) -> String {
     if tokens >= 1_000_000_000 { return String(format: "%.1fB", tokens / 1_000_000_000) }
@@ -60,18 +71,80 @@ private func formatDate(_ date: Date, _ format: String) -> String {
 }
 
 private final class DashboardSurface: NSView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        updateColor()
+    override func draw(_ dirtyRect: NSRect) {
+        NSGradient(colors: [UsagePalette.housingTop, UsagePalette.housing, UsagePalette.housingBottom])?
+            .draw(in: bounds, angle: 270)
+        let outer = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 9, yRadius: 9)
+        UsagePalette.edge.setStroke(); outer.lineWidth = 1; outer.stroke()
+        let inner = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), xRadius: 8, yRadius: 8)
+        NSColor.white.withAlphaComponent(0.55).setStroke(); inner.lineWidth = 0.5; inner.stroke()
+    }
+}
+
+private final class InstrumentReadout: NSView {
+    init(content: NSView) {
+        super.init(frame: .zero)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
+        ])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateColor() }
-    private func updateColor() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        layer?.backgroundColor = (dark ? NSColor(srgbRed: 0.15, green: 0.153, blue: 0.169, alpha: 1)
-            : NSColor(srgbRed: 0.973, green: 0.973, blue: 0.98, alpha: 1)).cgColor
+    override func draw(_ dirtyRect: NSRect) {
+        let face = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 1), xRadius: 6, yRadius: 6)
+        NSGradient(starting: UsagePalette.lcdTop, ending: UsagePalette.lcdBottom)?.draw(in: face, angle: 270)
+        UsagePalette.lcdEdge.setStroke(); face.lineWidth = 1; face.stroke()
+        let top = NSBezierPath()
+        top.move(to: NSPoint(x: 6, y: bounds.maxY - 2))
+        top.line(to: NSPoint(x: bounds.maxX - 6, y: bounds.maxY - 2))
+        UsagePalette.ink.withAlphaComponent(0.14).setStroke(); top.lineWidth = 1.5; top.stroke()
+        let bottom = NSBezierPath()
+        bottom.move(to: NSPoint(x: 6, y: 0.5)); bottom.line(to: NSPoint(x: bounds.maxX - 6, y: 0.5))
+        NSColor.white.withAlphaComponent(0.8).setStroke(); bottom.lineWidth = 1; bottom.stroke()
     }
+}
+
+/// Standard NSButton behavior, keyboard support, and accessibility with a small
+/// raised metal face. Only the bezel is custom; AppKit still draws the content.
+private final class InstrumentButton: NSButton {
+    var accent = false
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: max(62, super.intrinsicContentSize.width + 16), height: 28)
+    }
+    override var focusRingMaskBounds: NSRect { bounds.insetBy(dx: 1, dy: 1) }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: focusRingMaskBounds, xRadius: 4, yRadius: 4).fill()
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        let face = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 1.5), xRadius: 4, yRadius: 4)
+        let base = accent ? UsagePalette.accent : UsagePalette.housing
+        let upper = base.blended(withFraction: isHighlighted ? 0.06 : 0.35, of: isHighlighted ? .black : .white) ?? base
+        let lower = base.blended(withFraction: isHighlighted ? 0.1 : 0.06, of: .black) ?? base
+        NSGradient(starting: upper, ending: lower)?.draw(in: face, angle: 270)
+        UsagePalette.ink.withAlphaComponent(isEnabled ? 0.26 : 0.12).setStroke()
+        face.lineWidth = 1; face.stroke()
+        cell?.drawInterior(withFrame: bounds.insetBy(dx: 9, dy: 0), in: self)
+    }
+}
+
+private func instrumentButton(_ title: String, target: AnyObject, action: Selector, accent: Bool = false) -> NSButton {
+    let button = InstrumentButton(title: title, target: target, action: action)
+    button.accent = accent
+    button.isBordered = false
+    button.bezelStyle = .regularSquare
+    button.focusRingType = .exterior
+    button.font = .systemFont(ofSize: 11, weight: .medium)
+    button.contentTintColor = UsagePalette.ink
+    button.attributedTitle = NSAttributedString(string: title, attributes: [
+        .font: button.font!, .foregroundColor: NSColor(srgbRed: 0.118, green: 0.125, blue: 0.106, alpha: 1)
+    ])
+    button.setContentHuggingPriority(.required, for: .horizontal)
+    button.setContentCompressionResistancePriority(.required, for: .horizontal)
+    return button
 }
 
 private final class RemainingBar: NSView {
@@ -79,7 +152,7 @@ private final class RemainingBar: NSView {
     init(_ value: Double?) {
         remaining = value
         super.init(frame: .zero)
-        heightAnchor.constraint(equalToConstant: 5).isActive = true
+        heightAnchor.constraint(equalToConstant: 10).isActive = true
         setAccessibilityElement(true)
         setAccessibilityRole(.progressIndicator)
         setAccessibilityLabel("Remaining allowance")
@@ -87,15 +160,21 @@ private final class RemainingBar: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.quaternaryLabelColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 2.5, yRadius: 2.5).fill()
-        guard let remaining, remaining > 0 else { return }
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        let green = dark ? NSColor(srgbRed: 0.45, green: 0.81, blue: 0.68, alpha: 1)
-            : NSColor(srgbRed: 0.157, green: 0.525, blue: 0.404, alpha: 1)
-        (remaining <= 10 ? NSColor.systemRed : remaining <= 25 ? .systemOrange : green).setFill()
-        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: bounds.width * remaining / 100,
-            height: bounds.height), xRadius: 2.5, yRadius: 2.5).fill()
+        let fillWidth = bounds.width * CGFloat(min(100, max(0, remaining ?? 0))) / 100
+        let color = (remaining ?? 100) <= 10 ? UsagePalette.critical :
+            (remaining ?? 100) <= 25 ? UsagePalette.warning : UsagePalette.meter
+        let count = 32
+        let step = bounds.width / CGFloat(count)
+        for index in 0..<count {
+            let rect = NSRect(x: CGFloat(index) * step, y: 0, width: max(1, step - 2), height: bounds.height)
+            UsagePalette.track.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).fill()
+            let filled = min(rect.width, max(0, fillWidth - rect.minX))
+            if remaining != nil, filled > 0 {
+                color.setFill()
+                NSBezierPath(roundedRect: NSRect(x: rect.minX, y: 0, width: filled, height: rect.height), xRadius: 1, yRadius: 1).fill()
+            }
+        }
     }
 }
 
@@ -106,11 +185,13 @@ final class DashboardController: NSViewController {
     private let stack = NSStackView()
     private let scroll = NSScrollView()
     private let document = FlippedView()
+    private var readoutStack: NSStackView?
     private var detailsExpanded = UserDefaults.standard.bool(forKey: "ModelDetailsExpanded")
     private var settingsExpanded = false
 
     override func loadView() {
         let surface = DashboardSurface(frame: NSRect(x: 0, y: 0, width: 350, height: 450))
+        surface.appearance = NSAppearance(named: .aqua)
         view = surface
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -140,9 +221,10 @@ final class DashboardController: NSViewController {
         wrapper.translatesAutoresizingMaskIntoConstraints = false
         content.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(content)
-        stack.addArrangedSubview(wrapper)
+        let destination = readoutStack ?? stack
+        destination.addArrangedSubview(wrapper)
         NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            wrapper.widthAnchor.constraint(equalTo: destination.widthAnchor),
             content.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: inset),
             content.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -inset),
             content.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: top),
@@ -154,15 +236,23 @@ final class DashboardController: NSViewController {
         _ = view
         guard let owner else { return }
         let oldOrigin = scroll.contentView.bounds.origin
+        readoutStack = nil
         for child in stack.arrangedSubviews { stack.removeArrangedSubview(child); child.removeFromSuperview() }
         let plan = owner.snapshot?.buckets.compactMap(\.planType).first?.capitalized ?? "Account"
         let mark = NSImageView()
         mark.image = UsageBrand.logo(size: 18) ?? NSImage(systemSymbolName: "bubble.left", accessibilityDescription: nil)
-        mark.contentTintColor = .labelColor
+        mark.contentTintColor = UsagePalette.ink
         mark.widthAnchor.constraint(equalToConstant: 18).isActive = true
         mark.heightAnchor.constraint(equalToConstant: 18).isActive = true
-        let title = textLabel("Codex Usage", size: 13, weight: .semibold)
-        add(horizontal([mark, title, NSView(), textLabel(plan, size: 11, color: .secondaryLabelColor)]), top: 20, bottom: 22)
+        let title = caption("Codex / Usage", size: 11)
+        title.textColor = UsagePalette.ink
+        add(horizontal([mark, title, NSView(), caption(plan)]), top: 18, bottom: 16)
+
+        let readout = NSStackView()
+        readout.orientation = .vertical
+        readout.alignment = .leading
+        readout.spacing = 0
+        readoutStack = readout
 
         if let snapshot = owner.snapshot, !snapshot.buckets.isEmpty {
             let window = owner.statusWindow
@@ -182,50 +272,49 @@ final class DashboardController: NSViewController {
                 }
             }
             if snapshot.ordinaryUsageAllowed == false {
-                add(textLabel("Account usage is currently restricted.", size: 12, color: .systemOrange), bottom: 16)
+                add(textLabel("Account usage is currently restricted.", size: 12, color: UsagePalette.warning), bottom: 16)
             }
         } else {
             add(vertical([textLabel(owner.isRefreshing ? "Checking your allowance…" : "Usage unavailable", size: 20, weight: .medium),
-                textLabel("Uses the account already signed in to Codex.", size: 12, color: .secondaryLabelColor)]), bottom: 22)
+                textLabel("Uses the account already signed in to Codex.", size: 12, color: UsagePalette.secondary)]), bottom: 22)
         }
 
-        if let error = owner.errorText { add(textLabel(error, size: 11, color: .systemOrange), bottom: 16) }
-        if let error = owner.actionErrorText { add(textLabel(error, size: 11, color: .systemOrange), bottom: 16) }
+        if let error = owner.errorText { add(textLabel(error, size: 11, color: UsagePalette.warning), bottom: 16) }
+        if let error = owner.actionErrorText { add(textLabel(error, size: 11, color: UsagePalette.warning), bottom: 16) }
         if let snapshot = owner.snapshot, !owner.isRefreshing, Date().timeIntervalSince(snapshot.fetchedAt) > 600 || owner.errorText != nil {
-            add(textLabel("Last successful update \(formatDate(snapshot.fetchedAt, "EEE, h:mm a"))", size: 11, color: .secondaryLabelColor), bottom: 12)
+            add(textLabel("Last successful update \(formatDate(snapshot.fetchedAt, "EEE, h:mm a"))", size: 11, color: UsagePalette.secondary), bottom: 12)
         }
 
         let forecast = owner.forecast
         let rates = owner.history.map { ModelUsageRates.calculate(history: $0) } ?? []
         let scenarios = makeScenarios(forecast, rates)
         let selected = scenarios.first(where: { $0.id == owner.selectedTimelineID }) ?? scenarios.first(where: { $0.hours != nil }) ?? scenarios.first
-        add(separator(), bottom: 19)
+        add(separator(), bottom: 16)
         addRunway(owner, selected: selected)
-        add(separator(), inset: 0)
-        let disclosure = NSButton(title: "Model token rates", target: self, action: #selector(toggleDetails))
-        disclosure.isBordered = false
+        readoutStack = nil
+        add(InstrumentReadout(content: readout), bottom: 14, inset: 14)
+        let disclosure = instrumentButton("Model token rates", target: self, action: #selector(toggleDetails))
         disclosure.alignment = .left
         disclosure.font = .systemFont(ofSize: 12)
         disclosure.image = NSImage(systemSymbolName: detailsExpanded ? "chevron.down" : "chevron.right", accessibilityDescription: nil)
         disclosure.imagePosition = .imageTrailing
         disclosure.setAccessibilityLabel("Model token rates")
         disclosure.setAccessibilityValue(detailsExpanded ? "Expanded" : "Collapsed")
-        add(disclosure, top: 12, bottom: 12)
+        add(disclosure, bottom: 14, inset: 14)
         if detailsExpanded { addDetails(owner, forecast: forecast, rates: rates, scenarios: scenarios, selected: selected) }
-        add(separator(), inset: 0)
+        add(separator(), inset: 14)
 
         let footerText: String
         if let count = owner.snapshot?.availableResets, count > 0 { footerText = "\(count) full reset\(count == 1 ? "" : "s") available" }
         else if owner.isRefreshing { footerText = "Refreshing…" }
         else if let date = owner.snapshot?.fetchedAt { footerText = "Updated \(formatDate(date, "h:mm a"))" }
         else { footerText = "Codex account allowance" }
-        let footer = textLabel(footerText, size: 11, color: .secondaryLabelColor)
+        let footer = textLabel(footerText, size: 10, color: UsagePalette.secondary)
+        footer.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         footer.toolTip = freshness(owner)
-        let settings = NSButton(title: "Settings", target: self, action: #selector(toggleSettings))
-        settings.bezelStyle = .inline
-        settings.font = .systemFont(ofSize: 11)
+        let settings = instrumentButton("Settings", target: self, action: #selector(toggleSettings), accent: true)
         settings.setAccessibilityValue(settingsExpanded ? "Expanded" : "Collapsed")
-        add(horizontal([footer, NSView(), settings]), top: 10, bottom: 12)
+        add(horizontal([footer, NSView(), settings]), top: 10, bottom: 14, inset: 14)
         if settingsExpanded { addSettings(owner) }
 
         view.layoutSubtreeIfNeeded()
@@ -239,21 +328,21 @@ final class DashboardController: NSViewController {
 
     private func addAllowance(_ window: UsageWindow) {
         let expired = window.resetsAt.map { $0.isFinite && $0 <= Date().timeIntervalSince1970 } ?? false
-        let label = textLabel("\(window.label) \(expired ? "last known" : "remaining")", size: 11, color: .secondaryLabelColor)
+        let label = caption("\(window.label) \(expired ? "last known" : "remaining")")
         let number = window.remainingPercent.map { String(Int($0.rounded())) } ?? "—"
-        let headline = textLabel("", size: 49, weight: .medium)
-        let value = NSMutableAttributedString(string: number, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 49, weight: .medium), .foregroundColor: NSColor.labelColor])
-        if window.remainingPercent != nil { value.append(NSAttributedString(string: "%", attributes: [.font: NSFont.systemFont(ofSize: 26, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor])) }
+        let headline = textLabel("", size: 54, weight: .medium)
+        let value = NSMutableAttributedString(string: number, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 54, weight: .medium), .foregroundColor: UsagePalette.ink])
+        if window.remainingPercent != nil { value.append(NSAttributedString(string: "%", attributes: [.font: NSFont.monospacedSystemFont(ofSize: 27, weight: .medium), .foregroundColor: UsagePalette.secondary])) }
         headline.attributedStringValue = value
-        add(vertical([label, headline, RemainingBar(window.remainingPercent), resetRow(window)], spacing: 8), bottom: 20)
+        add(vertical([label, headline, RemainingBar(window.remainingPercent), resetRow(window)], spacing: 8), bottom: 18)
     }
 
     private func resetRow(_ window: UsageWindow) -> NSView {
-        guard let timestamp = window.resetsAt, timestamp.isFinite else { return textLabel("Reset time unavailable", size: 11, color: .secondaryLabelColor) }
+        guard let timestamp = window.resetsAt, timestamp.isFinite else { return textLabel("Reset time unavailable", size: 11, color: UsagePalette.secondary) }
         let date = Date(timeIntervalSince1970: timestamp)
-        if date <= Date() { return textLabel("Reset due · checking for an update", size: 11, color: .secondaryLabelColor) }
-        let row = horizontal([textLabel("Resets \(formatDate(date, "EEE, MMM d"))", size: 11, color: .secondaryLabelColor), NSView(),
-            textLabel(formatDate(date, "h:mm a"), size: 11, color: .secondaryLabelColor)])
+        if date <= Date() { return textLabel("Reset due · checking for an update", size: 11, color: UsagePalette.secondary) }
+        let row = horizontal([textLabel("Resets \(formatDate(date, "EEE, MMM d"))", size: 11, color: UsagePalette.secondary), NSView(),
+            textLabel(formatDate(date, "h:mm a"), size: 11, color: UsagePalette.secondary)])
         row.toolTip = "\(UsageTimelineView.fullDate(date)) · \(TimeZone.current.identifier)"
         return row
     }
@@ -282,19 +371,20 @@ final class DashboardController: NSViewController {
             value = "≈" + (hours >= 1 && hours < 48 ? "\(Int(hours.rounded()))h" : runwayTime(hours))
         }
         let amount = textLabel(value, size: 23, weight: .medium)
+        amount.font = .monospacedSystemFont(ofSize: 23, weight: .medium)
         amount.setContentHuggingPriority(.required, for: .horizontal)
         amount.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let summary = vertical([textLabel(selected == nil ? "Usage runway" : title, size: 13), textLabel(caption, size: 11, color: .secondaryLabelColor)], spacing: 4)
+        let summary = vertical([textLabel(selected == nil ? "Usage runway" : title, size: 12), textLabel(caption, size: 10, color: UsagePalette.secondary)], spacing: 4)
         summary.toolTip = selected?.label
         add(horizontal([summary, NSView(), amount]), bottom: 13)
         if let reset = owner.timelineResetDate {
             add(UsageTimelineView(now: Date(), reset: reset, estimatedEnd: end), bottom: 13)
             if let end, end >= reset {
-                add(textLabel("Reset comes first. End assumes no refill.", size: 11, color: .secondaryLabelColor), bottom: 14)
+                add(textLabel("Reset comes first. End assumes no refill.", size: 11, color: UsagePalette.secondary), bottom: 14)
             } else if let end, end <= Date() {
-                add(textLabel("Estimated limit reached. Refresh for the latest allowance.", size: 11, color: .secondaryLabelColor), bottom: 14)
+                add(textLabel("Estimated limit reached. Refresh for the latest allowance.", size: 11, color: UsagePalette.secondary), bottom: 14)
             }
-        } else { add(textLabel("A fresh allowance reading is needed for the timeline.", size: 11, color: .secondaryLabelColor), bottom: 18) }
+        } else { add(textLabel("A fresh allowance reading is needed for the timeline.", size: 11, color: UsagePalette.secondary), bottom: 18) }
     }
 
     private func addDetails(_ owner: UsageApp, forecast: UsageForecast?, rates: [ModelUsageRate], scenarios: [TimelineScenario], selected: TimelineScenario?) {
@@ -313,24 +403,25 @@ final class DashboardController: NSViewController {
         }
         let days = (rates.first?.elapsedHours ?? 168) / 24
         let period = abs(days - 7) < 0.01 ? "7-day" : String(format: "%.1f-day", days)
-        add(textLabel("\(period) average · includes idle time and concurrent runs", size: 11, color: .secondaryLabelColor), bottom: 10)
+        add(textLabel("\(period) average · includes idle time and concurrent runs", size: 11, color: UsagePalette.secondary), bottom: 10)
         if !rates.isEmpty, let history = owner.history,
            owner.historyErrorText != nil || Date().timeIntervalSince(history.scannedAt) > 900 {
             let reason = owner.historyErrorText ?? "Local history is awaiting an update."
-            add(textLabel("\(reason)\nShowing history last read \(formatDate(history.scannedAt, "EEE, h:mm a")).", size: 11, color: .secondaryLabelColor), bottom: 10)
+            add(textLabel("\(reason)\nShowing history last read \(formatDate(history.scannedAt, "EEE, h:mm a")).", size: 11, color: UsagePalette.secondary), bottom: 10)
         }
         for rate in rates {
             let pace = textLabel("\(compactTokens(rate.tokensPerHour)) / h", size: 12, weight: .medium)
+            pace.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
             pace.setContentHuggingPriority(.required, for: .horizontal)
             pace.setContentCompressionResistancePriority(.required, for: .horizontal)
             let row = horizontal([textLabel(rate.model, size: 12), NSView(), pace])
             row.toolTip = "\(compactTokens(rate.tokensPerDay)) tokens/day · \(compactTokens(rate.totalTokens)) total"
             add(row, bottom: 8)
         }
-        if rates.isEmpty { add(textLabel(owner.isReadingHistory ? "Reading local token history…" : owner.historyErrorText ?? "No recent local token activity found.", size: 11, color: .secondaryLabelColor), bottom: 12) }
+        if rates.isEmpty { add(textLabel(owner.isReadingHistory ? "Reading local token history…" : owner.historyErrorText ?? "No recent local token activity found.", size: 11, color: UsagePalette.secondary), bottom: 12) }
         if let model = forecast?.models.first(where: { $0.model == selected?.id }), let low = model.lowerHours, let high = model.upperHours, let tokens = model.remainingTokens {
             let elapsed = max(0, Date().timeIntervalSince(owner.snapshot?.fetchedAt ?? Date()) / 3600)
-            add(textLabel("Selected scenario: ≈\(compactTokens(tokens)) tokens left\nObserved range: \(runwayTime(max(0, low - elapsed)))–\(runwayTime(max(0, high - elapsed))) at isolated model pace", size: 11, color: .secondaryLabelColor), top: 4, bottom: 10)
+            add(textLabel("Selected scenario: ≈\(compactTokens(tokens)) tokens left\nObserved range: \(runwayTime(max(0, low - elapsed)))–\(runwayTime(max(0, high - elapsed))) at isolated model pace", size: 11, color: UsagePalette.secondary), top: 4, bottom: 10)
         } else if selected?.hours == nil && !rates.isEmpty {
             let reason: String
             if owner.isReadingHistory { reason = "Updating local history for the runway estimate…" }
@@ -341,10 +432,10 @@ final class DashboardController: NSViewController {
             else if owner.history?.warning != nil { reason = "Incomplete local history prevents reliable model attribution." }
             else if forecast != nil { reason = "Runway needs enough isolated usage to separate this model’s allowance use." }
             else { reason = "The current allowance and history do not support a runway estimate." }
-            add(textLabel(reason, size: 11, color: .secondaryLabelColor), bottom: 10)
+            add(textLabel(reason, size: 11, color: UsagePalette.secondary), bottom: 10)
         }
-        add(textLabel("Runway is elapsed time at the sampled pace, not continuous generation. Local logs may miss other account activity.", size: 11, color: .secondaryLabelColor), bottom: 14)
-        if let warning = owner.history?.warning { add(textLabel(warning, size: 11, color: .secondaryLabelColor), bottom: 14) }
+        add(textLabel("Runway is elapsed time at the sampled pace, not continuous generation. Local logs may miss other account activity.", size: 11, color: UsagePalette.secondary), bottom: 14)
+        if let warning = owner.history?.warning { add(textLabel(warning, size: 11, color: UsagePalette.secondary), bottom: 14) }
     }
 
     private func freshness(_ owner: UsageApp) -> String {
@@ -355,26 +446,21 @@ final class DashboardController: NSViewController {
 
     private func addSettings(_ owner: UsageApp) {
         add(separator(), bottom: 14)
-        add(textLabel(freshness(owner), size: 11, color: .secondaryLabelColor), bottom: 10)
-        let refresh = NSButton(title: "Refresh now", target: owner, action: #selector(UsageApp.refreshNow))
-        refresh.bezelStyle = .rounded
+        add(textLabel(freshness(owner), size: 11, color: UsagePalette.secondary), bottom: 10)
+        let refresh = instrumentButton("Refresh now", target: owner, action: #selector(UsageApp.refreshNow))
         refresh.isEnabled = !owner.isRefreshing
-        let open = NSButton(title: "Open Codex", target: owner, action: #selector(UsageApp.openCodex))
-        open.bezelStyle = .rounded
+        let open = instrumentButton("Open Codex", target: owner, action: #selector(UsageApp.openCodex))
         add(horizontal([refresh, open]), bottom: 12)
         let launch = NSButton(checkboxWithTitle: "Launch at login", target: owner, action: #selector(UsageApp.toggleLogin))
         launch.font = .systemFont(ofSize: 11)
         launch.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        let quit = NSButton(title: "Quit", target: owner, action: #selector(UsageApp.quit))
-        quit.bezelStyle = .inline
-        quit.font = .systemFont(ofSize: 11)
+        let quit = instrumentButton("Quit", target: owner, action: #selector(UsageApp.quit))
         add(horizontal([launch, NSView(), quit]), bottom: 10)
         if SMAppService.mainApp.status == .requiresApproval {
-            let allow = NSButton(title: "Allow in Login Items…", target: owner, action: #selector(UsageApp.openLoginSettings))
-            allow.bezelStyle = .inline
+            let allow = instrumentButton("Allow in Login Items…", target: owner, action: #selector(UsageApp.openLoginSettings))
             add(allow, bottom: 10)
         }
-        add(textLabel("Codex allowance · \(TimeZone.current.identifier)", size: 11, color: .secondaryLabelColor), bottom: 16)
+        add(textLabel("Codex allowance · \(TimeZone.current.identifier)", size: 11, color: UsagePalette.secondary), bottom: 16)
     }
 
     @objc private func toggleDetails() {
