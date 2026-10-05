@@ -189,7 +189,6 @@ final class DashboardController: NSViewController {
     private var detailsExpanded = UserDefaults.standard.bool(forKey: "ModelDetailsExpanded")
     private var settingsExpanded = false
     private var resetScroll = false
-    private var showAllRepositories = false
 
     override func loadView() {
         let surface = DashboardSurface(frame: NSRect(x: 0, y: 0, width: 350, height: 450))
@@ -360,22 +359,7 @@ final class DashboardController: NSViewController {
         guard let owner, UsageReportingRange.allCases.indices.contains(sender.selectedSegment) else { return }
         owner.analyticsRange = UsageReportingRange.allCases[sender.selectedSegment]
         resetScroll = true
-        showAllRepositories = false
         owner.updateUI()
-    }
-
-    @objc private func toggleRepositories() {
-        showAllRepositories.toggle()
-        owner?.updateUI()
-    }
-
-    private func money(_ amount: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.maximumFractionDigits = amount >= 10_000 ? 0 : 2
-        return formatter.string(from: NSNumber(value: amount)) ?? "—"
     }
 
     private func exactTokens(_ amount: Double) -> String {
@@ -418,12 +402,11 @@ final class DashboardController: NSViewController {
                 add(textLabel(owner.isReadingAnalytics ? "Reading your usage…" : "History unavailable", size: 22, weight: .medium), bottom: 12)
                 add(textLabel(owner.analyticsErrorText ?? "The first scan can take a moment. Your allowance is still available.", size: 12, color: UsagePalette.secondary), bottom: 16)
             }
-            add(textLabel("Token and repository history stays on this Mac.", size: 11, color: UsagePalette.secondary), bottom: 16)
+            add(textLabel("Token history stays on this Mac.", size: 11, color: UsagePalette.secondary), bottom: 16)
             add(separator(), inset: 14)
             return
         }
-        if owner.selectedTab == .tokens { addTokenHistory(analytics) }
-        else { addRepositoryHistory(analytics) }
+        addTokenHistory(analytics)
         if let error = owner.analyticsErrorText {
             add(textLabel(error, size: 11, color: UsagePalette.warning), top: 4, bottom: 10)
         }
@@ -473,62 +456,6 @@ final class DashboardController: NSViewController {
                 add(vertical([row, AnalyticsBar(fraction: model.tokens / max(1, analytics.totalTokens))], spacing: 6), bottom: 13)
             }
         }
-    }
-
-    private func addRepositoryHistory(_ analytics: UsageAnalytics) {
-        historyReadout {
-            add(caption("API-equivalent estimate"), bottom: 6)
-            let hasCost = analytics.pricedTokens > 0
-            let headline = fixedValue(hasCost ? "≈" + money(analytics.estimatedCostUSD) : "—", size: 32)
-            headline.toolTip = pricingExplanation
-            add(headline, bottom: 5)
-            add(textLabel(historyPeriod(analytics), size: 10, color: UsagePalette.secondary), bottom: 12)
-            if analytics.totalTokens == 0 {
-                add(textLabel("No token activity found in this range.", size: 12, color: UsagePalette.secondary), bottom: 16)
-            } else if analytics.unpricedTokens > 0 {
-                let coverage = 100 * analytics.pricedTokens / max(1, analytics.totalTokens)
-                add(textLabel("Prices cover \(Int(coverage.rounded(.down)))% of tokens. \(compactTokens(analytics.unpricedTokens)) unpriced.", size: 11, color: UsagePalette.secondary), bottom: 12)
-            }
-            let explanation = textLabel("Standard API prices · not your subscription bill", size: 10, color: UsagePalette.secondary)
-            explanation.toolTip = pricingExplanation
-            add(explanation, bottom: 16)
-        }
-        if !analytics.repositories.isEmpty {
-            add(horizontal([caption("By repository"), NSView(), caption("USD")]), bottom: 14)
-            let maximum = analytics.repositories.map(\.costUSD).max() ?? 0
-            let duplicates = Dictionary(grouping: analytics.repositories, by: \.name)
-            for repository in analytics.repositories.prefix(showAllRepositories ? analytics.repositories.count : 8) {
-                let name = textLabel(repository.name, size: 12, weight: .medium)
-                name.lineBreakMode = .byTruncatingMiddle
-                name.maximumNumberOfLines = 1
-                let costText = repository.pricedTokens > 0 ? money(repository.costUSD) + (repository.unpricedTokens > 0 ? "+" : "") : "Unpriced"
-                let row = horizontal([name, NSView(), fixedValue(costText)])
-                let partial = repository.unpricedTokens > 0 && repository.pricedTokens > 0 ? " · partial estimate" : ""
-                var detail = "\(compactTokens(repository.tokens)) tokens\(partial)"
-                if (duplicates[repository.name]?.count ?? 0) > 1, let path = repository.path {
-                    detail += " · " + URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
-                }
-                let subtitle = textLabel(detail, size: 10, color: UsagePalette.secondary)
-                subtitle.maximumNumberOfLines = 1
-                subtitle.lineBreakMode = .byTruncatingMiddle
-                var content: [NSView] = [row, subtitle]
-                if repository.pricedTokens > 0 { content.append(AnalyticsBar(fraction: repository.costUSD / max(0.01, maximum))) }
-                let group = vertical(content, spacing: 5)
-                group.toolTip = (repository.path ?? "No working directory in the local log") + "\n\(exactTokens(repository.tokens)) tokens · \(exactTokens(repository.unpricedTokens)) unpriced"
-                add(group, bottom: 16)
-            }
-            if analytics.repositories.count > 8 {
-                let title = showAllRepositories ? "Show fewer" : "Show all \(analytics.repositories.count) repositories"
-                add(instrumentButton(title, target: self, action: #selector(toggleRepositories)), bottom: 14)
-            }
-            let note = textLabel("Estimates exclude cache-write charges, long-context uplifts, tools and speed tiers.", size: 10, color: UsagePalette.secondary)
-            note.toolTip = pricingExplanation
-            add(note, bottom: 10)
-        }
-    }
-
-    private var pricingExplanation: String {
-        "\(ModelPricing.basis), checked \(ModelPricing.checkedAt). Cached input is priced separately and counted once. Unknown model prices are excluded from dollars. Excludes cache writes, long-context uplifts, tool charges and speed tiers; actual API costs may be higher. \(ModelPricing.sourceURL)"
     }
 
     private func addAllowance(_ window: UsageWindow) {

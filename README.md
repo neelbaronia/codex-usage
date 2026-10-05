@@ -1,14 +1,14 @@
 # Codex Usage
 
-A small native macOS menu bar app showing the remaining **Codex account allowance** for the account already signed into Codex. A monochrome ChatGPT mark sits inside a remaining-usage ring, alongside the percentage. Click it for a compact instrument panel with warm aluminum housing, an inset olive readout, and tactile controls; expand **Model token rates** for more detail. Switch between **Allowance**, **Tokens**, and **Repos** without leaving the panel. The panel keeps the same warm appearance in light and dark mode.
+A small native macOS menu bar app showing the remaining **Codex account allowance** for the account already signed into Codex. A monochrome ChatGPT mark sits inside a remaining-usage ring, alongside the percentage. Click it for a compact instrument panel with warm aluminum housing, an inset olive readout, and tactile controls; expand **Model token rates** for more detail. Switch between **Remaining Allowance** and **Token Usage** without leaving the panel. The panel keeps the same warm appearance in light and dark mode.
 
-The Allowance tab displays live Codex subscription limits. Tokens and Repos summarize local history, including estimated API-equivalent token cost. The app does not measure actual API billing, API credit balances, or every ChatGPT product's limits. The menu bar uses the lowest known remaining percentage among the main Codex bucket's windows; the popover shows each available window separately.
+The Remaining Allowance tab displays live Codex subscription limits. Token Usage summarizes locally recorded input, cached input, and output tokens. The app does not measure actual API billing, API credit balances, or every ChatGPT product's limits. The menu bar uses the lowest known remaining percentage among the main Codex bucket's windows; the popover shows each available window separately.
 
 ## Download for Mac
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.6.0-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
+1. Under **Assets**, download **`Codex-Usage-1.6.1-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
 2. Double-click the ZIP, then move **Codex Usage.app** to **Applications**.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
@@ -17,7 +17,7 @@ The download contains both Apple silicon and Intel executables and targets **mac
 
 ### First launch
 
-Release **1.6.0 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
+Release **1.6.1 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
 
 Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for the notarized release. Builds you compile yourself or download from CI remain ad hoc signed by default.
 
@@ -61,15 +61,11 @@ The release script writes to `dist/`; the universal app is built separately from
 - **Launch at login** is optional. If macOS requests approval, use **Allow in Login Items…** or System Settings → General → Login Items.
 - Missing usage appears as unknown or unavailable, never as an unused allowance. A failed refresh preserves the last successful result, shows an error and update time, and marks the menu bar percentage with `!`. Old data is also marked stale; a passed reset time does not imply a fresh quota.
 
-## Token and repository history
+## Token history
 
-**Tokens** shows total input + output tokens, an activity chart, the cached-input subset, and totals by model. **Repos** ranks repositories by estimated API-equivalent cost, with token totals alongside. Both tabs share **7 days**, **30 days**, and **All available** ranges. The shorter ranges include today and the preceding 6 or 29 days in your Mac's time zone. All available means retained local history, not the age of your account.
+**Token Usage** shows total input + output tokens, an activity chart, the cached-input subset, and totals by model. Choose **7 days**, **30 days**, or **All available**. The shorter ranges include today and the preceding 6 or 29 days in your Mac's time zone. All available means retained local history, not the age of your account.
 
-The first history tab you open starts a background scan. Allowance stays available while it loads. Subsequent range changes use cached summaries; the regular five-minute refresh and **Settings → Refresh now** update history too. No Node runtime, API key, or separate service is needed.
-
-Repository attribution uses the working directory recorded for each turn and the nearest existing Git root. Separate full paths remain separate even when their folder names match. Directories without a Git root use the recorded working directory, and missing attribution appears as **Unknown repository**. Hover over a repository for its full local path and exact token count.
-
-Dollar amounts use a bundled snapshot of **Standard short-context API prices**, applied to the selected history. They are estimates, not subscription charges or actual savings. Cached input is priced separately and counted only once; reasoning is already part of output. Models without a verified price remain in token totals and show **Unpriced**; partial dollar estimates are marked with `+`. Cache-write charges, long-context premiums, tools and speed tiers are excluded. See [pricing assumptions and sources](docs/PRICING.md).
+Opening Token Usage starts a background scan. Remaining Allowance stays available while it loads. Subsequent range changes use cached summaries; the regular five-minute refresh and **Settings → Refresh now** update history too. No Node runtime, API key, or separate service is needed. Cached input is part of input and reasoning is part of output, so neither is counted twice.
 
 ## Estimated runway
 

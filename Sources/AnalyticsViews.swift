@@ -1,12 +1,11 @@
 import AppKit
 
 enum DashboardTab: Int, CaseIterable {
-    case allowance, tokens, repositories
+    case allowance, tokens
     var title: String {
         switch self {
-        case .allowance: return "Allowance"
-        case .tokens: return "Tokens"
-        case .repositories: return "Repos"
+        case .allowance: return "Remaining Allowance"
+        case .tokens: return "Token Usage"
         }
     }
 }
