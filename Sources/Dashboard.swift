@@ -342,7 +342,7 @@ final class DashboardController: NSViewController {
         let date = Date(timeIntervalSince1970: timestamp)
         if date <= Date() { return textLabel("Reset due · checking for an update", size: 11, color: UsagePalette.secondary) }
         let row = horizontal([textLabel("Resets \(formatDate(date, "EEE, MMM d"))", size: 11, color: UsagePalette.secondary), NSView(),
-            textLabel(formatDate(date, "h:mm a"), size: 11, color: UsagePalette.secondary)])
+            textLabel(UsageTimelineView.clockTime(date), size: 11, color: UsagePalette.secondary)])
         row.toolTip = "\(UsageTimelineView.fullDate(date)) · \(TimeZone.current.identifier)"
         return row
     }

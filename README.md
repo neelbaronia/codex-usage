@@ -8,7 +8,7 @@ This displays live Codex subscription limits. It does not measure API billing, A
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.5.0-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
+1. Under **Assets**, download **`Codex-Usage-1.5.1-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
 2. Double-click the ZIP, then move **Codex Usage.app** to **Applications**.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
@@ -17,7 +17,7 @@ The download contains both Apple silicon and Intel executables and targets **mac
 
 ### First launch
 
-Release **1.5.0 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
+Release **1.5.1 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
 
 Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for the notarized release. Builds you compile yourself or download from CI remain ad hoc signed by default.
 
@@ -57,7 +57,7 @@ The release script writes to `dist/`; the universal app is built separately from
 - Usage refreshes on startup, every five minutes, and when the Mac wakes. Opening an older result also triggers a refresh.
 - Click the menu bar indicator, then **Settings → Refresh now** for a manual update. Settings also contains **Open Codex**, **Launch at login**, and **Quit**.
 - The headline matches the most limiting allowance shown in the menu bar; other reported windows remain visible below it. **Model token rates** expands the model selector, recorded rates, and forecast details. The expanded/collapsed choice is remembered.
-- Reset times use your Mac's local time zone. Window names come from the durations reported by Codex.
+- Timeline markers show the local date and clock time for the estimated allowance limit and reset, with a short time-zone label when space allows. The forecast stays anchored to its allowance reading. Window names come from the durations reported by Codex.
 - **Launch at login** is optional. If macOS requests approval, use **Allow in Login Items…** or System Settings → General → Login Items.
 - Missing usage appears as unknown or unavailable, never as an unused allowance. A failed refresh preserves the last successful result, shows an error and update time, and marks the menu bar percentage with `!`. Old data is also marked stale; a passed reset time does not imply a fresh quota.
 

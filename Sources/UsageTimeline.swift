@@ -26,7 +26,7 @@ final class UsageTimelineView: NSView {
         horizon = max(resetDistance, min(limit, endDistance))
         clipped = endDistance > limit
         super.init(frame: .zero)
-        heightAnchor.constraint(equalToConstant: 80).isActive = true
+        heightAnchor.constraint(equalToConstant: 112).isActive = true
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityLabel("Usage timeline")
@@ -43,7 +43,7 @@ final class UsageTimelineView: NSView {
         let left: CGFloat = 8
         // The final few points leave room for a clipped-end arrow.
         let right = max(left + 1, bounds.width - 12)
-        let y: CGFloat = 35
+        let y: CGFloat = 50
         func x(_ date: Date) -> CGFloat {
             left + CGFloat(min(1, max(0, date.timeIntervalSince(now) / horizon))) * (right - left)
         }
@@ -65,14 +65,14 @@ final class UsageTimelineView: NSView {
             stroke(from: NSPoint(x: left, y: y), to: NSPoint(x: endX, y: y), color: UsagePalette.warning, width: 2)
         }
 
-        let resetWidth: CGFloat = 54
+        let resetLabel = markerLabel(for: reset, role: "Reset", maximumWidth: max(1, bounds.width - 42))
+        let resetWidth = resetLabel.width
         let resetLabelX = min(max(42, resetX - resetWidth / 2), max(42, bounds.width - resetWidth))
         let resetAlignedRight = resetLabelX + resetWidth >= bounds.width
-        let resetTextWidth = ceil(max(
-            (Self.shortDate(reset) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 10, weight: .medium)]).width,
-            ("Reset" as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 9)]).width))
-        let resetTextX = resetLabelX + (resetAlignedRight ? resetWidth - resetTextWidth : (resetWidth - resetTextWidth) / 2)
-        let resetLabelBounds = NSRect(x: resetTextX - 4, y: 0, width: resetTextWidth + 8, height: 29)
+        let resetLabelBounds = NSRect(x: resetLabelX - 4, y: 0, width: resetWidth + 8, height: 42)
+        let resetAnchor = min(max(resetX, resetLabelX + 4), resetLabelX + resetWidth - 4)
+        let resetLeaderBounds = NSRect(x: min(resetX, resetAnchor) - 3, y: min(resetY, 42) - 2,
+                                      width: abs(resetAnchor - resetX) + 6, height: abs(resetY - 42) + 4)
 
         // Use local midnight rather than fixed 24-hour intervals, including
         // daylight-saving transitions. Keep ticks visible beside event markers;
@@ -102,8 +102,9 @@ final class UsageTimelineView: NSView {
             let dayText = dayFormatter.string(from: tick) as NSString
             let labelWidth = ceil(dayText.size(withAttributes: dayAttributes).width)
             let labelX = min(max(0, position - labelWidth / 2), max(0, bounds.width - labelWidth))
-            let dayBounds = NSRect(x: labelX, y: 17, width: labelWidth, height: 14)
-            if labelX >= lastDayLabelRight + 4, !dayBounds.intersects(resetLabelBounds) {
+            let dayBounds = NSRect(x: labelX, y: 32, width: labelWidth, height: 14)
+            if labelX >= lastDayLabelRight + 4, !dayBounds.intersects(resetLabelBounds),
+               !dayBounds.intersects(resetLeaderBounds) {
                 dayText.draw(in: dayBounds, withAttributes: dayAttributes)
                 lastDayLabelRight = dayBounds.maxX
             }
@@ -113,26 +114,24 @@ final class UsageTimelineView: NSView {
 
         // Reset and Now share the upper label lane; a close reset label is
         // nudged right and connected without changing its time position.
-        let resetAnchor = min(max(resetX, resetLabelX + 4), resetLabelX + resetWidth - 4)
         stroke(from: NSPoint(x: resetX, y: y), to: NSPoint(x: resetX, y: resetY),
                color: green.withAlphaComponent(0.45), width: 0.75)
-        stroke(from: NSPoint(x: resetX, y: resetY), to: NSPoint(x: resetAnchor, y: 27),
+        stroke(from: NSPoint(x: resetX, y: resetY), to: NSPoint(x: resetAnchor, y: 42),
                color: green.withAlphaComponent(0.45), width: 0.75)
-        label(Self.shortDate(reset), subtitle: "Reset", x: resetLabelX, y: 0,
-              width: resetWidth, color: UsagePalette.secondary,
+        label(resetLabel, x: resetLabelX, y: 0,
               alignment: resetAlignedRight ? .right : .center)
 
         if let end, let endX, let endY {
-            let subtitle = end >= reset ? "End without reset\(clipped ? " →" : "")" : "Est. limit"
-            let labelWidth: CGFloat = end >= reset ? 102 : 66
+            let role = end >= reset ? "End without reset\(clipped ? " →" : "")" : "Est. limit"
+            let endLabel = markerLabel(for: end, role: role, maximumWidth: bounds.width)
+            let labelWidth = endLabel.width
             let labelX = min(max(0, endX - labelWidth / 2), max(0, bounds.width - labelWidth))
             let labelAnchor = min(max(endX, labelX + 4), labelX + labelWidth - 4)
             stroke(from: NSPoint(x: endX, y: y), to: NSPoint(x: endX, y: endY),
                    color: UsagePalette.warning.withAlphaComponent(0.7), width: 0.75)
-            stroke(from: NSPoint(x: endX, y: endY), to: NSPoint(x: labelAnchor, y: 50),
+            stroke(from: NSPoint(x: endX, y: endY), to: NSPoint(x: labelAnchor, y: 70),
                    color: UsagePalette.warning.withAlphaComponent(0.7), width: 0.75)
-            label(Self.shortDate(end), subtitle: subtitle, x: labelX, y: 53,
-                  width: labelWidth, color: UsagePalette.secondary,
+            label(endLabel, x: labelX, y: 73,
                   alignment: labelX == 0 ? .left : (labelX + labelWidth >= bounds.width ? .right : .center))
         }
 
@@ -175,18 +174,42 @@ final class UsageTimelineView: NSView {
         color.setStroke(); path.stroke()
     }
 
-    private func label(_ title: String, subtitle: String, x: CGFloat, y: CGFloat,
-                       width: CGFloat, color: NSColor, alignment: NSTextAlignment = .left) {
+    private struct MarkerLabel {
+        let date: String
+        let time: String
+        let role: String
+        let width: CGFloat
+    }
+
+    private func markerLabel(for date: Date, role: String, maximumWidth: CGFloat) -> MarkerLabel {
+        let day = Self.shortDate(date)
+        let clock = Self.clockTime(date)
+        let zone = TimeZone.current.abbreviation(for: date) ?? TimeZone.current.identifier
+        let zonedClock = "\(clock) \(zone)"
+        func width(_ text: String, size: CGFloat) -> CGFloat {
+            ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .medium)]).width) + 4
+        }
+        // Prefer a short local zone, but never squeeze or truncate the clock to
+        // make room for it. The full date and zone are always in the tooltip.
+        let preferredWidth = min(maximumWidth, max(114, width(clock, size: 10)))
+        let time = width(zonedClock, size: 10) <= preferredWidth ? zonedClock : clock
+        let labelWidth = min(maximumWidth, max(66, width(day, size: 10), width(time, size: 10), width(role, size: 9)))
+        return MarkerLabel(date: day, time: time, role: role, width: labelWidth)
+    }
+
+    private func label(_ label: MarkerLabel, x: CGFloat, y: CGFloat,
+                       alignment: NSTextAlignment = .left) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: color, .paragraphStyle: paragraph
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: UsagePalette.secondary, .paragraphStyle: paragraph
         ]
-        let dateAttributes: [NSAttributedString.Key: Any] = [
+        let roleAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 9), .foregroundColor: UsagePalette.secondary, .paragraphStyle: paragraph
         ]
-        (title as NSString).draw(in: NSRect(x: x, y: y, width: width, height: 13), withAttributes: titleAttributes)
-        (subtitle as NSString).draw(in: NSRect(x: x, y: y + 13, width: width, height: 12), withAttributes: dateAttributes)
+        (label.date as NSString).draw(in: NSRect(x: x, y: y, width: label.width, height: 13), withAttributes: titleAttributes)
+        (label.time as NSString).draw(in: NSRect(x: x, y: y + 13, width: label.width, height: 13), withAttributes: titleAttributes)
+        (label.role as NSString).draw(in: NSRect(x: x, y: y + 26, width: label.width, height: 12), withAttributes: roleAttributes)
     }
 
     private func singleLabel(_ text: String, rect: NSRect, color: NSColor) {
@@ -197,7 +220,13 @@ final class UsageTimelineView: NSView {
 
     private static func shortDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEE d"
+        formatter.setLocalizedDateFormatFromTemplate("EEE MMM d")
+        return formatter.string(from: date)
+    }
+
+    static func clockTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
         return formatter.string(from: date)
     }
 
@@ -205,6 +234,7 @@ final class UsageTimelineView: NSView {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        let zone = TimeZone.current.abbreviation(for: date) ?? TimeZone.current.identifier
+        return "\(formatter.string(from: date)) \(zone)"
     }
 }
