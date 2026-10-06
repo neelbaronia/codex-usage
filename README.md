@@ -1,5 +1,7 @@
 # Codex Usage
 
+<img src="Resources/AppIcon.png" width="128" alt="Codex Usage: chat knot inside an allowance ring">
+
 A small native macOS menu bar app showing the remaining **Codex account allowance** for the account already signed into Codex. A monochrome ChatGPT mark sits inside a remaining-usage ring, alongside the percentage. Click it for a compact instrument panel with warm aluminum housing, an inset olive readout, and tactile controls; expand **Model token rates** for more detail. Switch between **Remaining Allowance** and **Token Usage** without leaving the panel. The panel keeps the same warm appearance in light and dark mode.
 
 The Remaining Allowance tab displays live Codex subscription limits. Token Usage summarizes locally recorded input, cached input, and output tokens. The app does not measure actual API billing, API credit balances, or every ChatGPT product's limits. The menu bar uses the lowest known remaining percentage among the main Codex bucket's windows; the popover shows each available window separately.
@@ -8,7 +10,7 @@ The Remaining Allowance tab displays live Codex subscription limits. Token Usage
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.6.1-macos-universal.dmg`**.
+1. Under **Assets**, download **`Codex-Usage-1.6.2-macos-universal.dmg`**.
 2. Open the DMG and drag **Codex Usage** onto **Applications**, then eject the disk image.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
@@ -19,7 +21,7 @@ The download contains both Apple silicon and Intel executables and targets **mac
 
 ### First launch
 
-Release **1.6.1 is Developer ID signed and notarized by Apple**. The app and disk image each have their Apple notarization ticket attached. Both the DMG and its app pass Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
+Release **1.6.2 is Developer ID signed and notarized by Apple**. The app and disk image each have their Apple notarization ticket attached. Both the DMG and its app pass Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
 
 Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for the notarized release. Builds you compile yourself or download from CI remain ad hoc signed by default.
 
@@ -30,7 +32,7 @@ To update, choose **Settings → Quit** in the widget, download the newer releas
 The release includes a matching **.dmg.sha256** file for the DMG. Put it beside the DMG and run:
 
 ```sh
-shasum -a 256 -c Codex-Usage-1.6.1-macos-universal.dmg.sha256
+shasum -a 256 -c Codex-Usage-1.6.2-macos-universal.dmg.sha256
 ```
 
 The ZIP uses **SHA256SUMS.txt**. Put it beside the ZIP and run:

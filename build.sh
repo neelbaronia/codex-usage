@@ -97,7 +97,7 @@ fi
 # out of the app. COPYFILE_DISABLE avoids copying Finder metadata/xattrs.
 export COPYFILE_DISABLE=1
 cp "$PROJECT_DIR/Info.plist" "$STAGED_APP/Contents/Info.plist"
-for RESOURCE in UsageKnot.pdf openai.svg SimpleIcons-LICENSE.md; do
+for RESOURCE in AppIcon.icns UsageKnot.pdf openai.svg SimpleIcons-LICENSE.md; do
   cp "$PROJECT_DIR/Resources/$RESOURCE" "$STAGED_APP/Contents/Resources/$RESOURCE"
 done
 for DOCUMENT in LICENSE THIRD_PARTY_NOTICES.md; do

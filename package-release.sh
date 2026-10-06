@@ -97,7 +97,7 @@ fi
   RELATIVE=${FILE#"$APP_DIR"/}
   case "$RELATIVE" in
     Contents/Info.plist|Contents/MacOS/CodexUsage|Contents/_CodeSignature/CodeResources|\
-    Contents/Resources/UsageKnot.pdf|Contents/Resources/openai.svg|\
+    Contents/Resources/AppIcon.icns|Contents/Resources/UsageKnot.pdf|Contents/Resources/openai.svg|\
     Contents/Resources/SimpleIcons-LICENSE.md|Contents/Resources/LICENSE|\
     Contents/Resources/THIRD_PARTY_NOTICES.md) ;;
     Contents/CodeResources)
@@ -108,6 +108,14 @@ done
 for RESOURCE in UsageKnot.pdf openai.svg SimpleIcons-LICENSE.md LICENSE THIRD_PARTY_NOTICES.md; do
   [ -f "$APP_DIR/Contents/Resources/$RESOURCE" ] || { printf '%s\n' "Required release resource missing: $RESOURCE" >&2; exit 1; }
 done
+# Retained releases may predate the app icon. When the bundle declares one,
+# require its resource without changing or re-signing the supplied app.
+ICON_NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP_DIR/Contents/Info.plist" 2>/dev/null || true)
+if [ -n "$ICON_NAME" ]; then
+  [ "$ICON_NAME" = AppIcon ] && [ -f "$APP_DIR/Contents/Resources/AppIcon.icns" ] || {
+    printf '%s\n' 'The declared app icon must be AppIcon with an AppIcon.icns resource.' >&2; exit 1;
+  }
+fi
 
 mkdir -p "$DIST_DIR"
 DIST_DIR=$(CDPATH= cd -- "$DIST_DIR" && pwd)
