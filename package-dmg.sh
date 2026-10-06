@@ -5,6 +5,9 @@ PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_DIR=
 OUTPUT_DIR="$PROJECT_DIR/dist"
 DS_STORE=
+BACKGROUND="$PROJECT_DIR/Resources/dmg-background.tiff"
+LAYOUT_PYTHON=${DMG_LAYOUT_PYTHON:-python3}
+REVISION=
 if [ -f "$PROJECT_DIR/Resources/dmg-layout.dsstore" ]; then
   DS_STORE="$PROJECT_DIR/Resources/dmg-layout.dsstore"
 fi
@@ -19,11 +22,21 @@ while [ "$#" -gt 0 ]; do
         --ds-store) DS_STORE=$2 ;;
       esac
       shift 2 ;;
+    --revision)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { printf '%s\n' '--revision requires a positive integer.' >&2; exit 64; }
+      case "$2" in
+        *[!0-9]*|0*) printf '%s\n' '--revision must be a positive integer without leading zeros.' >&2; exit 64 ;;
+      esac
+      REVISION=$2
+      shift 2 ;;
     -h|--help)
-      printf '%s\n' 'Usage: /bin/sh package-dmg.sh --app PATH [--output-dir DIR] [--ds-store PATH]' \
+      printf '%s\n' 'Usage: /bin/sh package-dmg.sh --app PATH [--output-dir DIR] [--ds-store PATH] [--revision N]' \
         'Packages an existing Developer ID signed, stapled, universal app into a read-only UDZO disk image.' \
         'The app is never rebuilt, re-signed, or modified. The default output directory is dist/.' \
         'Uses Resources/dmg-layout.dsstore when present; --ds-store overrides that Finder layout template.' \
+        'Includes Resources/dmg-background.tiff as the hidden drag-to-Applications background.' \
+        'Requires ds-store==1.3.3 and mac-alias==2.2.3 in DMG_LAYOUT_PYTHON (default: python3).' \
+        'An optional positive --revision N adds -rN to the DMG filename without changing the app version.' \
         'Set CODE_SIGN_IDENTITY explicitly to a Developer ID Application name or SHA-1 to sign the DMG with a secure timestamp.' \
         'Without that variable the DMG itself is unsigned. Outer-DMG notarization and checksums are separate release steps.' \
         'Existing output files are never overwritten; ZIP releases and their checksums are untouched.'
@@ -36,6 +49,15 @@ APP_DIR=$(CDPATH= cd -- "$APP_DIR" && pwd)
 [ "$(basename "$APP_DIR")" = 'Codex Usage.app' ] || { printf '%s\n' 'The app must be named Codex Usage.app.' >&2; exit 1; }
 if [ -n "$DS_STORE" ]; then
   [ -f "$DS_STORE" ] || { printf '%s\n' 'The supplied .DS_Store template is not a file.' >&2; exit 1; }
+fi
+[ -f "$BACKGROUND" ] || { printf '%s\n' 'Missing Resources/dmg-background.tiff; regenerate the DMG background before packaging.' >&2; exit 1; }
+if ! "$LAYOUT_PYTHON" -c 'from importlib.metadata import version; import ds_store, mac_alias; assert version("ds-store") == "1.3.3"; assert version("mac-alias") == "2.2.3"' >/dev/null 2>&1; then
+  printf '%s\n' 'DMG layout generation requires Python with ds-store==1.3.3 and mac-alias==2.2.3.' \
+    'Prepare an isolated build environment from the project directory:' \
+    '  python3 -m venv build/dmg-layout-venv' \
+    '  build/dmg-layout-venv/bin/python -m pip install ds-store==1.3.3 mac-alias==2.2.3' \
+    'Then set DMG_LAYOUT_PYTHON="$PWD/build/dmg-layout-venv/bin/python" when running this script.' >&2
+  exit 1
 fi
 
 SIGNING_IDENTITY=${CODE_SIGN_IDENTITY-}
@@ -61,7 +83,7 @@ case "$VERSION" in ''|*[!0-9A-Za-z._-]*) printf '%s\n' 'The app version is not s
 [ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_DIR/Contents/Info.plist")" = 13.0 ] || {
   printf '%s\n' 'The supplied app must target macOS 13.0.' >&2; exit 1;
 }
-DMG_NAME="Codex-Usage-$VERSION-macos-universal.dmg"
+DMG_NAME="Codex-Usage-$VERSION-macos-universal${REVISION:+-r$REVISION}.dmg"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR=$(CDPATH= cd -- "$OUTPUT_DIR" && pwd)
 FINAL_DMG="$OUTPUT_DIR/$DMG_NAME"
@@ -137,13 +159,34 @@ in with your ChatGPT account. No separate API key, Node, or Xcode is needed.
 If replacing an older copy, choose Settings > Quit in the widget first.
 After copying the app, eject this disk image.
 INSTALL
+cp "$BACKGROUND" "$PACKAGE_TEMP/contents/.background.tiff"
 if [ -n "$DS_STORE" ]; then cp "$DS_STORE" "$PACKAGE_TEMP/contents/.DS_Store"; fi
 app_manifest "$PACKAGE_TEMP/contents/Codex Usage.app" > "$PACKAGE_TEMP/staged-app.sha256"
 /usr/bin/cmp "$PACKAGE_TEMP/original-app.sha256" "$PACKAGE_TEMP/staged-app.sha256"
 
 STAGED_DMG="$PACKAGE_TEMP/$DMG_NAME"
+WRITABLE_DMG="$PACKAGE_TEMP/writable.dmg"
 /usr/bin/hdiutil create -srcfolder "$PACKAGE_TEMP/contents" -volname 'Codex Usage' \
-  -fs HFS+ -format UDZO -imagekey zlib-level=9 -nospotlight "$STAGED_DMG"
+  -fs HFS+ -format UDRW -nospotlight "$WRITABLE_DMG"
+
+# Finder needs the background's IDs and creation dates from this HFS+ image.
+# An alias generated in the staging folder or copied from another image can
+# resolve to the wrong volume when another Codex Usage image is mounted.
+MOUNT_ACTIVE=true
+/usr/bin/hdiutil attach "$WRITABLE_DMG" -readwrite -nobrowse -noautoopen -owners off \
+  -mountpoint "$MOUNT_POINT" -plist > "$PACKAGE_TEMP/writable-attachment.plist"
+if [ -n "$DS_STORE" ]; then
+  "$LAYOUT_PYTHON" "$PROJECT_DIR/scripts/generate-dmg-layout.py" \
+    --volume-root "$MOUNT_POINT" --output "$MOUNT_POINT/.DS_Store" --template "$DS_STORE"
+else
+  "$LAYOUT_PYTHON" "$PROJECT_DIR/scripts/generate-dmg-layout.py" \
+    --volume-root "$MOUNT_POINT" --output "$MOUNT_POINT/.DS_Store"
+fi
+cp "$MOUNT_POINT/.DS_Store" "$PACKAGE_TEMP/contents/.DS_Store"
+/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+MOUNT_ACTIVE=false
+
+/usr/bin/hdiutil convert "$WRITABLE_DMG" -format UDZO -imagekey zlib-level=9 -o "$STAGED_DMG"
 /usr/bin/hdiutil verify "$STAGED_DMG"
 [ "$(/usr/bin/hdiutil imageinfo -format "$STAGED_DMG")" = UDZO ] || { printf '%s\n' 'Expected a read-only UDZO disk image.' >&2; exit 1; }
 if [ -n "$SIGNING_IDENTITY" ]; then
@@ -155,6 +198,7 @@ fi
 
 # Set the cleanup guard before attach so an interrupted attach cannot cause
 # the mounted filesystem to be deleted by the staging cleanup.
+mkdir -p "$MOUNT_POINT"
 MOUNT_ACTIVE=true
 /usr/bin/hdiutil attach "$STAGED_DMG" -readonly -nobrowse -noautoopen -owners off \
   -mountpoint "$MOUNT_POINT" -plist > "$PACKAGE_TEMP/attachment.plist"
@@ -162,7 +206,8 @@ MOUNT_ACTIVE=true
   printf '%s\n' 'The mounted Applications shortcut is incorrect.' >&2; exit 1;
 }
 /usr/bin/cmp "$PACKAGE_TEMP/contents/Install Codex Usage.txt" "$MOUNT_POINT/Install Codex Usage.txt"
-if [ -n "$DS_STORE" ]; then /usr/bin/cmp "$DS_STORE" "$MOUNT_POINT/.DS_Store"; fi
+/usr/bin/cmp "$BACKGROUND" "$MOUNT_POINT/.background.tiff"
+/usr/bin/cmp "$PACKAGE_TEMP/contents/.DS_Store" "$MOUNT_POINT/.DS_Store"
 app_manifest "$MOUNT_POINT/Codex Usage.app" > "$PACKAGE_TEMP/mounted-app.sha256"
 /usr/bin/cmp "$PACKAGE_TEMP/original-app.sha256" "$PACKAGE_TEMP/mounted-app.sha256"
 test -x "$MOUNT_POINT/Codex Usage.app/Contents/MacOS/CodexUsage"

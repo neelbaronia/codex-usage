@@ -92,29 +92,78 @@ Start with the exact notarized, stapled app retained by the release workflow or
 extracted from the published ZIP. Do not rebuild, re-sign, or otherwise change
 the app to add a DMG to an existing release.
 
+Set up the build-only Finder layout dependencies in an isolated environment:
+
+```sh
+python3 -m venv build/dmg-layout-venv
+build/dmg-layout-venv/bin/python -m pip install ds-store==1.3.3 mac-alias==2.2.3
+export DMG_LAYOUT_PYTHON="$PWD/build/dmg-layout-venv/bin/python"
+```
+
+The packager defaults to `python3` when `DMG_LAYOUT_PYTHON` is unset and checks
+both dependency versions before packaging. These dependencies are not bundled
+with the app and are not needed by people installing it.
+
 ```sh
 CODE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
 /bin/sh package-dmg.sh --app '/absolute/path/to/Codex Usage.app'
 ```
 
 The script creates `dist/Codex-Usage-VERSION-macos-universal.dmg`, containing the
-unchanged app, an Applications shortcut, and installation instructions. It uses
-`Resources/dmg-layout.dsstore` when present for the Finder layout; `--ds-store`
-can select another template. It verifies the mounted app and refuses to overwrite
-an existing DMG. Open the image in Finder and check the layout and drag-to-install
-flow before publishing. The DMG's Developer ID signature is separate from Apple
-notarization: the outer image still needs its own submission and stapled ticket.
+unchanged app, an Applications shortcut, installation instructions, and a hidden
+`.background.tiff` at the volume root, copied from `Resources/dmg-background.tiff`. It uses
+`Resources/dmg-layout.dsstore` when present for the Finder view settings;
+`--ds-store` can select another template. It creates a writable HFS+ image and
+generates the background alias on that mounted image using its real file IDs
+and creation dates, while preserving the template's other view settings. This
+keeps the background associated with its own image when an older Codex Usage
+disk is also mounted. It then detaches and converts the image to read-only UDZO
+before signing. It verifies the mounted app, generated layout, and background
+bytes, and refuses to overwrite an existing DMG. Open the image in Finder and
+check that the arrow points from the app to Applications and that the
+drag-to-install flow works. The DMG's Developer ID signature is separate from
+Apple notarization: the outer image still needs its own submission and stapled
+ticket.
 
-The checked-in layout contains only relative filenames and Finder view settings.
-To change it, edit `scripts/generate-dmg-layout.py` and regenerate with an isolated
-Python environment containing `ds-store==1.3.3`. Regular packaging does not need
-Python or this dependency.
+For a packaging-only update to an existing app release, add `--revision N`, where
+`N` is a positive integer without leading zeros. For example:
+
+```sh
+CODE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
+/bin/sh package-dmg.sh --app '/absolute/path/to/Codex Usage.app' --revision 2
+```
+
+For version 1.6.2 this creates `Codex-Usage-1.6.2-macos-universal-r2.dmg`.
+Keep the existing DMG, ZIP, app version, and tag unchanged. Notarize and staple
+the revised image separately, then publish it and its own `.dmg.sha256` file.
+Use that revised filename in all commands below and update download links only
+after the public artifact passes verification.
+
+The checked-in background and Finder layout share a 600 × 340 point canvas,
+with the app at (160, 100) and Applications at (440, 100). Keep their dimensions
+and positions aligned when changing the installer artwork. Regenerate the
+background with:
+
+```sh
+swift scripts/generate-dmg-background.swift
+```
+
+This writes `Resources/dmg-background.tiff` and an ignored preview at
+`build/dmg-background-preview.png`. To change the Finder layout, edit
+`scripts/generate-dmg-layout.py` and regenerate the view-settings template with
+`"$DMG_LAYOUT_PYTHON" scripts/generate-dmg-layout.py`. The packager generates
+the image-specific background alias separately using `--volume-root` and
+`--output`. The resulting alias must not contain a developer's private staging
+path. The layout follows dmgbuild's root-level background and icon-view fields;
+it preserves the native target alias metadata and uses a public canonical mount
+hint. Regular packaging consumes the checked-in artwork and does not require
+Swift, but it uses the Python environment above to prepare each image's layout.
 
 Using the Keychain profile created above, submit the image once and retain the
 response, diagnostics, and submitted hash under `build/`:
 
 ```sh
-DMG_NAME=Codex-Usage-1.6.1-macos-universal.dmg
+DMG_NAME=Codex-Usage-1.6.2-macos-universal-r2.dmg
 DMG_PATH="$PWD/dist/$DMG_NAME"
 mkdir -p build
 DMG_RECORD_DIR=$(mktemp -d "$PWD/build/notarization-dmg.XXXXXX")
@@ -167,10 +216,11 @@ belongs to the ZIP release. Preserve the submission records locally.
    Publish both the ZIP and notarized DMG, along with `dist/SHA256SUMS.txt` for
    the ZIP and the DMG's own `.dmg.sha256` file. CI only checks the DMG script's
    shell syntax; it does not require signing or notarization credentials.
-4. When adding a DMG to an existing release, upload only the DMG and its
+4. When adding or revising a DMG for an existing release, upload only the DMG and its
    `.dmg.sha256` file after completing the checks above. Keep the identical app,
    existing ZIP bytes, `SHA256SUMS.txt`, and tag. Adding a distribution format
-   requires no app version bump. Do not replace existing assets.
+   or revising the installer layout requires no app version bump. Use
+   `--revision N` for a new installer filename; do not replace existing assets.
 5. Download the published assets again and verify their respective checksums.
    Extract the ZIP and mount the DMG; repeat the app signature, `stapler validate`,
    and Gatekeeper checks, as well as the DMG checks above. Confirm downloads are
