@@ -87,7 +87,7 @@ Apple has accepted the submission.
 
 ## Package and notarize a DMG
 
-The DMG is an additional distribution format; it has not yet been published.
+Public releases provide a notarized DMG and a ZIP containing the same app.
 Start with the exact notarized, stapled app retained by the release workflow or
 extracted from the published ZIP. Do not rebuild, re-sign, or otherwise change
 the app to add a DMG to an existing release.
@@ -114,7 +114,7 @@ Using the Keychain profile created above, submit the image once and retain the
 response, diagnostics, and submitted hash under `build/`:
 
 ```sh
-DMG_NAME=Codex-Usage-1.4.2-macos-universal.dmg
+DMG_NAME=Codex-Usage-1.6.1-macos-universal.dmg
 DMG_PATH="$PWD/dist/$DMG_NAME"
 mkdir -p build
 DMG_RECORD_DIR=$(mktemp -d "$PWD/build/notarization-dmg.XXXXXX")
@@ -167,10 +167,9 @@ belongs to the ZIP release. Preserve the submission records locally.
    Publish both the ZIP and notarized DMG, along with `dist/SHA256SUMS.txt` for
    the ZIP and the DMG's own `.dmg.sha256` file. CI only checks the DMG script's
    shell syntax; it does not require signing or notarization credentials.
-4. For the planned DMG addition to **v1.4.2**, upload only
-   `Codex-Usage-1.4.2-macos-universal.dmg` and its `.dmg.sha256` file as additional
-   assets on that release after completing the checks above. Keep the identical
-   app, existing ZIP bytes, `SHA256SUMS.txt`, and tag. This packaging addition
+4. When adding a DMG to an existing release, upload only the DMG and its
+   `.dmg.sha256` file after completing the checks above. Keep the identical app,
+   existing ZIP bytes, `SHA256SUMS.txt`, and tag. Adding a distribution format
    requires no app version bump. Do not replace existing assets.
 5. Download the published assets again and verify their respective checksums.
    Extract the ZIP and mount the DMG; repeat the app signature, `stapler validate`,

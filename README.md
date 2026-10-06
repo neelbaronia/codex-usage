@@ -8,16 +8,18 @@ The Remaining Allowance tab displays live Codex subscription limits. Token Usage
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.6.1-macos-universal.zip`**. Choose this ZIP rather than GitHub's automatically generated source-code archives.
-2. Double-click the ZIP, then move **Codex Usage.app** to **Applications**.
+1. Under **Assets**, download **`Codex-Usage-1.6.1-macos-universal.dmg`**.
+2. Open the DMG and drag **Codex Usage** onto **Applications**, then eject the disk image.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
+
+A ZIP containing the same app is also available. Extract it and move **Codex Usage.app** to **Applications**. GitHub's source-code archives are for building the app yourself.
 
 The download contains both Apple silicon and Intel executables and targets **macOS 13 or later**. You do not need Xcode or Node to run the widget. The current release has been tested on Apple silicon with macOS 26; Intel and earlier supported macOS versions are cross-compiled, not yet tested on physical machines. Your installed Codex version has its own system requirements.
 
 ### First launch
 
-Release **1.6.1 is Developer ID signed and notarized by Apple**, with Apple's ticket attached to the app. The extracted release ZIP passes Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
+Release **1.6.1 is Developer ID signed and notarized by Apple**. The app and disk image each have their Apple notarization ticket attached. Both the DMG and its app pass Gatekeeper as **Notarized Developer ID**. macOS may still show its normal confirmation that the app was downloaded from the internet; choose **Open** to launch it. See [Apple's explanation of notarized apps](https://support.apple.com/en-us/102445).
 
 Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for the notarized release. Builds you compile yourself or download from CI remain ad hoc signed by default.
 
@@ -25,7 +27,13 @@ Version 1.4.1 was ad hoc signed and not notarized. Download 1.4.2 or later for t
 
 To update, choose **Settings → Quit** in the widget, download the newer release, and replace the app in Applications. Updates are manual. Your login remains in Codex, and widget preferences are stored locally.
 
-Each release includes **SHA256SUMS.txt**. To verify a download, put it beside the ZIP and run:
+The release includes a matching **.dmg.sha256** file for the DMG. Put it beside the DMG and run:
+
+```sh
+shasum -a 256 -c Codex-Usage-1.6.1-macos-universal.dmg.sha256
+```
+
+The ZIP uses **SHA256SUMS.txt**. Put it beside the ZIP and run:
 
 ```sh
 shasum -a 256 -c SHA256SUMS.txt
