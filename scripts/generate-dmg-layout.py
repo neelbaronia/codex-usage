@@ -88,7 +88,7 @@ def write_volume_layout(volume_root, layout, template):
     # https://github.com/dmgbuild/dmgbuild/pull/275
     with DSStore.open(str(template), "r") as source:
         entries = [entry for entry in source if not (
-            entry.filename == "." and entry.code == b"pBBk"
+            entry.filename == "." and entry.code in (b"pBBk", b"icvp", b"bwsp")
         )]
         options = dict(source["."]["icvp"])
         window_options = dict(source["."]["bwsp"])
@@ -101,7 +101,8 @@ def write_volume_layout(volume_root, layout, template):
     options["backgroundImageAlias"] = alias.to_bytes()
     # Use the incremental writer, as dmgbuild does. ds-store 1.3.3's bulk
     # initial_entries writer records depth 1 for a leaf-only tree; Finder
-    # ignores that layout even though the Python reader can decode it.
+    # ignores that layout even though the Python reader can decode it. Insert
+    # the final icvp and bwsp once: replacing entries also corrupts its count.
     with DSStore.open(str(layout), "w+") as store:
         for entry in entries:
             store.insert(entry)

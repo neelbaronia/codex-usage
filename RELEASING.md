@@ -130,10 +130,10 @@ For a packaging-only update to an existing app release, add `--revision N`, wher
 
 ```sh
 CODE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-/bin/sh package-dmg.sh --app '/absolute/path/to/Codex Usage.app' --revision 2
+/bin/sh package-dmg.sh --app '/absolute/path/to/Codex Usage.app' --revision 3
 ```
 
-For version 1.6.2 this creates `Codex-Usage-1.6.2-macos-universal-r2.dmg`.
+For version 1.6.2 this creates `Codex-Usage-1.6.2-macos-universal-r3.dmg`.
 Keep the existing DMG, ZIP, app version, and tag unchanged. Notarize and staple
 the revised image separately, then publish it and its own `.dmg.sha256` file.
 Use that revised filename in all commands below and update download links only
@@ -163,7 +163,7 @@ Using the Keychain profile created above, submit the image once and retain the
 response, diagnostics, and submitted hash under `build/`:
 
 ```sh
-DMG_NAME=Codex-Usage-1.6.2-macos-universal-r2.dmg
+DMG_NAME=Codex-Usage-1.6.2-macos-universal-r3.dmg
 DMG_PATH="$PWD/dist/$DMG_NAME"
 mkdir -p build
 DMG_RECORD_DIR=$(mktemp -d "$PWD/build/notarization-dmg.XXXXXX")

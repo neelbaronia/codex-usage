@@ -10,7 +10,7 @@ The Remaining Allowance tab displays live Codex subscription limits. Token Usage
 
 **[Download the latest release](https://github.com/neelbaronia/codex-usage/releases/latest)**
 
-1. Under **Assets**, download **`Codex-Usage-1.6.2-macos-universal-r2.dmg`**.
+1. Under **Assets**, download **`Codex-Usage-1.6.2-macos-universal-r3.dmg`**.
 2. Open the DMG and drag **Codex Usage** onto **Applications**, then eject the disk image.
 3. Open Codex Usage. Its logo and remaining percentage appear in your Mac's menu bar; there is no Dock window.
 4. Have the Codex CLI or Codex desktop app installed and signed in with your ChatGPT account. The widget uses that existing sign-in; no API key or separate account is needed.
@@ -32,7 +32,7 @@ To update, choose **Settings → Quit** in the widget, download the newer releas
 The release includes a matching **.dmg.sha256** file for the DMG. Put it beside the DMG and run:
 
 ```sh
-shasum -a 256 -c Codex-Usage-1.6.2-macos-universal-r2.dmg.sha256
+shasum -a 256 -c Codex-Usage-1.6.2-macos-universal-r3.dmg.sha256
 ```
 
 The ZIP uses **SHA256SUMS.txt**. Put it beside the ZIP and run:
