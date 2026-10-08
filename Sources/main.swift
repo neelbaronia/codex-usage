@@ -15,6 +15,7 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var wakeObserver: NSObjectProtocol?
     var snapshot: UsageSnapshot?
     var errorText: String?
+    var needsSignIn = false
     var actionErrorText: String?
     var isRefreshing = false
     var history: LocalUsageHistory?
@@ -175,8 +176,13 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             DispatchQueue.main.async {
                 self.isRefreshing = false
                 switch result {
-                case .success(let snapshot): self.snapshot = snapshot; self.errorText = nil
-                case .failure(let error): self.errorText = error.localizedDescription
+                case .success(let snapshot):
+                    self.snapshot = snapshot
+                    self.errorText = nil
+                    self.needsSignIn = false
+                case .failure(let error):
+                    self.errorText = error.localizedDescription
+                    self.needsSignIn = (error as? UsageProviderError) == .signInRequired
                 }
                 self.updateUI()
             }
@@ -251,6 +257,25 @@ final class UsageApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if error != nil {
                 DispatchQueue.main.async {
                     self?.actionErrorText = "Could not open Codex. Open it from Applications."
+                    self?.showPopover()
+                }
+            }
+        }
+    }
+
+    @objc func openTerminal() {
+        actionErrorText = nil
+        let candidates = ["/System/Applications/Utilities/Terminal.app", "/Applications/Utilities/Terminal.app"]
+        guard let path = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            actionErrorText = "Terminal could not be found. Open it from Applications → Utilities."
+            updateUI()
+            return
+        }
+        popover.performClose(nil)
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: path), configuration: .init()) { [weak self] _, error in
+            if error != nil {
+                DispatchQueue.main.async {
+                    self?.actionErrorText = "Could not open Terminal. Open it from Applications → Utilities."
                     self?.showPopover()
                 }
             }

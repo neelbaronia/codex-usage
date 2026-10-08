@@ -153,8 +153,10 @@ Install Codex Usage
 2. Open Codex Usage from Applications.
 3. Look for the logo and percentage in your Mac's menu bar.
 
-Requires macOS 13 or later and the Codex desktop app or CLI, already signed
-in with your ChatGPT account. No separate API key, Node, or Xcode is needed.
+Requires macOS 13 or later and the Codex desktop app or CLI. If you have not
+signed in yet, open Terminal, run `codex`, and choose “Sign in with ChatGPT”.
+Codex Usage will show these steps if it detects that sign-in is needed. No API
+key or separate Codex Usage account is needed.
 
 If replacing an older copy, choose Settings > Quit in the widget first.
 After copying the app, eject this disk image.

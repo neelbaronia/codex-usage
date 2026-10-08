@@ -258,6 +258,7 @@ final class DashboardController: NSViewController {
         tabs.font = .systemFont(ofSize: 12, weight: .medium)
         tabs.setAccessibilityLabel("Usage view")
         add(tabs, bottom: 16, inset: 14)
+        if owner.needsSignIn { addSignInPrompt(owner) }
         if owner.selectedTab == .allowance { addAllowanceContent(owner) }
         else { addHistoryContent(owner) }
         if let error = owner.actionErrorText { add(textLabel(error, size: 11, color: UsagePalette.warning), top: 10, bottom: 10) }
@@ -317,11 +318,13 @@ final class DashboardController: NSViewController {
                 add(textLabel("Account usage is currently restricted.", size: 12, color: UsagePalette.warning), bottom: 16)
             }
         } else {
-            add(vertical([textLabel(owner.isRefreshing ? "Checking your allowance…" : "Usage unavailable", size: 20, weight: .medium),
-                textLabel("Uses the account already signed in to Codex.", size: 12, color: UsagePalette.secondary)]), bottom: 22)
+            if !owner.needsSignIn {
+                add(vertical([textLabel(owner.isRefreshing ? "Checking your allowance…" : "Usage unavailable", size: 20, weight: .medium),
+                    textLabel("Uses the account already signed in to Codex.", size: 12, color: UsagePalette.secondary)]), bottom: 22)
+            }
         }
 
-        if let error = owner.errorText { add(textLabel(error, size: 11, color: UsagePalette.warning), bottom: 16) }
+        if let error = owner.errorText, !owner.needsSignIn { add(textLabel(error, size: 11, color: UsagePalette.warning), bottom: 16) }
         if let snapshot = owner.snapshot, !owner.isRefreshing, Date().timeIntervalSince(snapshot.fetchedAt) > 600 || owner.errorText != nil {
             add(textLabel("Last successful update \(formatDate(snapshot.fetchedAt, "EEE, h:mm a"))", size: 11, color: UsagePalette.secondary), bottom: 12)
         }
@@ -345,6 +348,20 @@ final class DashboardController: NSViewController {
         if detailsExpanded { addDetails(owner, forecast: forecast, rates: rates, scenarios: scenarios, selected: selected) }
         add(separator(), inset: 14)
 
+    }
+
+    private func addSignInPrompt(_ owner: UsageApp) {
+        let content = vertical([
+            caption("ACCOUNT SIGN-IN", size: 10),
+            textLabel("To show Remaining Allowance, sign in to Codex with your ChatGPT account.", size: 12, weight: .medium),
+            textLabel("In Terminal, run codex and choose “Sign in with ChatGPT.” Then return here and refresh.",
+                      size: 11, color: UsagePalette.secondary),
+            horizontal([
+                instrumentButton("Open Terminal", target: owner, action: #selector(UsageApp.openTerminal)),
+                instrumentButton("Refresh now", target: owner, action: #selector(UsageApp.refreshNow), accent: true)
+            ])
+        ], spacing: 8)
+        add(InstrumentReadout(content: content), bottom: 14, inset: 14)
     }
 
     @objc private func selectTab(_ sender: NSSegmentedControl) {
